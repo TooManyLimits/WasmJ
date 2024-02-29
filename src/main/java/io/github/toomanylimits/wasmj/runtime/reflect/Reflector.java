@@ -50,7 +50,7 @@ public class Reflector {
             visitor.visitEnd();
         });
 
-        Compile.implementModuleInstance(writer, moduleName);
+        Compile.implementModuleInstance(writer, moduleName, null);
         return ((ClassWriter) writer.getDelegate()).toByteArray();
     }
 

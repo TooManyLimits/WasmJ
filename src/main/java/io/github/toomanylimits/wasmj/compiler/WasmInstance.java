@@ -35,7 +35,10 @@ public class WasmInstance {
             throw new IllegalArgumentException("There is already a module named \"$moduleName\" in this wasm instance");
         loader.classes.put(Compile.getClassName(moduleName), compiledModule);
         try {
-            modules.put(moduleName, (ModuleInstance) loader.findClass(Compile.getClassName(moduleName).replace('/', '.')).getConstructor().newInstance());
+            ModuleInstance moduleInstance = (ModuleInstance) loader.findClass(
+                    Compile.getClassName(moduleName).replace('/', '.')
+            ).getConstructor().newInstance();
+            modules.put(moduleName, moduleInstance);
         } catch (NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
             throw new IllegalArgumentException("There should always be a valid constructor?", e);
         }

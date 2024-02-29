@@ -12,7 +12,7 @@ public class WasmJImpl {
 
     @WasmJAllow
     public static void err_char(int c) {
-        System.out.print(Character.toString(c));
+        System.err.print(Character.toString(c));
     }
 
     @WasmJAllow

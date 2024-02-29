@@ -59,7 +59,7 @@ public class Compile {
         clinit.visitMaxs(0, 0);
         clinit.visitEnd();
 
-        implementModuleInstance(writer, moduleName);
+        implementModuleInstance(writer, moduleName, module.start == null ? null : getFuncName(module.start));
 
         writer.visitEnd();
         return ((ClassWriter) writer.getDelegate()).toByteArray();
@@ -195,7 +195,8 @@ public class Compile {
     }
 
     // Public, used in reflection also
-    public static void implementModuleInstance(ClassVisitor writer, String moduleName) {
+    // startFuncName is nullable
+    public static void implementModuleInstance(ClassVisitor writer, String moduleName, String startFuncName) {
         // Default constructor
         MethodVisitor constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
         constructor.visitCode();
@@ -212,6 +213,17 @@ public class Compile {
         nameMethod.visitInsn(Opcodes.ARETURN);
         nameMethod.visitMaxs(0, 0);
         nameMethod.visitEnd();
+
+        // start() method: Run the start method, if one exists
+        // Start method is assumed to have descriptor ()V
+        MethodVisitor startMethod = writer.visitMethod(Opcodes.ACC_PUBLIC, "start", "()V", null, null);
+        startMethod.visitCode();
+        if (startFuncName != null) {
+            startMethod.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(moduleName), startFuncName, "()V", false);
+        }
+        startMethod.visitInsn(Opcodes.RETURN);
+        startMethod.visitMaxs(0, 0);
+        startMethod.visitEnd();
     }
 
 }
