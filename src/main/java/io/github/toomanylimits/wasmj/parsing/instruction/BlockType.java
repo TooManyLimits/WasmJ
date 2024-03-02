@@ -1,8 +1,8 @@
-package io.github.toomanylimits.wasmj.structure.instruction;
+package io.github.toomanylimits.wasmj.parsing.instruction;
 
-import io.github.toomanylimits.wasmj.structure.module.ModuleParseException;
-import io.github.toomanylimits.wasmj.structure.module.WasmModule;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 
 import java.io.IOException;
 import java.io.InputStream;

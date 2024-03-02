@@ -1,16 +1,15 @@
-package io.github.toomanylimits.wasmj.compiler;
+package io.github.toomanylimits.wasmj.runtime;
 
-import io.github.toomanylimits.wasmj.runtime.ModuleInstance;
+import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.runtime.reflect.Reflector;
 import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
-import io.github.toomanylimits.wasmj.structure.module.WasmModule;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**

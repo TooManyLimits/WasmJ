@@ -1,9 +1,9 @@
-package io.github.toomanylimits.wasmj.structure.module;
+package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.structure.types.GlobalType;
-import io.github.toomanylimits.wasmj.structure.types.Limits;
-import io.github.toomanylimits.wasmj.structure.types.TableType;
-import io.github.toomanylimits.wasmj.structure.utils.Util;
+import io.github.toomanylimits.wasmj.parsing.types.GlobalType;
+import io.github.toomanylimits.wasmj.parsing.types.Limits;
+import io.github.toomanylimits.wasmj.parsing.types.TableType;
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,11 +45,11 @@ public abstract sealed class Import {
     }
 
     public static Import read(InputStream stream) throws IOException, ModuleParseException {
-        String module = Util.readString(stream);
-        String name = Util.readString(stream);
+        String module = ParseHelper.readString(stream);
+        String name = ParseHelper.readString(stream);
         int b = stream.read();
         return switch (b) {
-            case 0 -> new Func(module, name, Util.readUnsignedWasmInt(stream));
+            case 0 -> new Func(module, name, ParseHelper.readUnsignedWasmInt(stream));
             case 1 -> new Table(module, name, TableType.read(stream));
             case 2 -> new Mem(module, name, Limits.read(stream));
             case 3 -> new Global(module, name, GlobalType.read(stream));

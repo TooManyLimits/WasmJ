@@ -1,6 +1,6 @@
-package io.github.toomanylimits.wasmj.structure.instruction;
+package io.github.toomanylimits.wasmj.parsing.instruction;
 
-import io.github.toomanylimits.wasmj.structure.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 
 import java.util.List;
 

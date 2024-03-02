@@ -1,6 +1,6 @@
-package io.github.toomanylimits.wasmj.structure.utils;
+package io.github.toomanylimits.wasmj.util;
 
-import io.github.toomanylimits.wasmj.structure.utils.funcs.ThrowingFunction;
+import io.github.toomanylimits.wasmj.util.funcs.ThrowingFunction;
 
 import java.util.ArrayList;
 import java.util.List;

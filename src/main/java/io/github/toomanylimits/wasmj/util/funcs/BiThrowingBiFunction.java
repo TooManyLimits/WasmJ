@@ -1,4 +1,4 @@
-package io.github.toomanylimits.wasmj.structure.utils.funcs;
+package io.github.toomanylimits.wasmj.util.funcs;
 
 @FunctionalInterface
 public interface BiThrowingBiFunction<T1, T2, R, E1 extends Throwable, E2 extends Throwable> {

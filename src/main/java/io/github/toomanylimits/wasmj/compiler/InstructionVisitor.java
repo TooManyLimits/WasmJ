@@ -1,6 +1,6 @@
 package io.github.toomanylimits.wasmj.compiler;
 
-import io.github.toomanylimits.wasmj.structure.instruction.Instruction;
+import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
 
 public abstract class InstructionVisitor<R> {
 

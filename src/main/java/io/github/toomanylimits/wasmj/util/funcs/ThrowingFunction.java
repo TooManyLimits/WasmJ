@@ -1,4 +1,4 @@
-package io.github.toomanylimits.wasmj.structure.utils.funcs;
+package io.github.toomanylimits.wasmj.util.funcs;
 
 @FunctionalInterface
 public interface ThrowingFunction<T, R, E extends Throwable> {

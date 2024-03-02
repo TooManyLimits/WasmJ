@@ -1,9 +1,9 @@
-package io.github.toomanylimits.wasmj.structure.instruction;
+package io.github.toomanylimits.wasmj.parsing.instruction;
 
 import io.github.toomanylimits.wasmj.compiler.InstructionVisitor;
-import io.github.toomanylimits.wasmj.structure.module.ModuleParseException;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
-import io.github.toomanylimits.wasmj.structure.utils.Util;
+import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -526,45 +526,45 @@ public sealed interface Instruction {
                 else
                     yield new If(bt, firstResult.instrs());
             }
-            case 0x0C -> new Branch(Util.readUnsignedWasmInt(stream));
-            case 0x0D -> new BranchIf(Util.readUnsignedWasmInt(stream));
-            case 0x0E -> new BranchTable(Util.readVector(stream, Util::readUnsignedWasmInt), Util.readUnsignedWasmInt(stream));
+            case 0x0C -> new Branch(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x0D -> new BranchIf(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x0E -> new BranchTable(ParseHelper.readVector(stream, ParseHelper::readUnsignedWasmInt), ParseHelper.readUnsignedWasmInt(stream));
             case 0x0F -> Return.INSTANCE;
-            case 0x10 -> new Call(Util.readUnsignedWasmInt(stream));
-            case 0x11 -> new CallIndirect(Util.readUnsignedWasmInt(stream), Util.readUnsignedWasmInt(stream));
+            case 0x10 -> new Call(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x11 -> new CallIndirect(ParseHelper.readUnsignedWasmInt(stream), ParseHelper.readUnsignedWasmInt(stream));
 
             case 0xD0 -> new RefNull(ValType.RefType.read(stream));
             case 0xD1 -> RefIsNull.INSTANCE;
-            case 0xD2 -> new RefFunc(Util.readUnsignedWasmInt(stream));
+            case 0xD2 -> new RefFunc(ParseHelper.readUnsignedWasmInt(stream));
 
             case 0x1A -> Drop.INSTANCE;
             case 0x1B -> Select.INSTANCE;
-            case 0x1C -> new SelectFrom(Util.readVector(stream, ValType::read));
+            case 0x1C -> new SelectFrom(ParseHelper.readVector(stream, ValType::read));
 
-            case 0x20 -> new LocalGet(Util.readUnsignedWasmInt(stream));
-            case 0x21 -> new LocalSet(Util.readUnsignedWasmInt(stream));
-            case 0x22 -> new LocalTee(Util.readUnsignedWasmInt(stream));
-            case 0x23 -> new GlobalGet(Util.readUnsignedWasmInt(stream));
-            case 0x24 -> new GlobalSet(Util.readUnsignedWasmInt(stream));
+            case 0x20 -> new LocalGet(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x21 -> new LocalSet(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x22 -> new LocalTee(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x23 -> new GlobalGet(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x24 -> new GlobalSet(ParseHelper.readUnsignedWasmInt(stream));
 
-            case 0x25 -> new TableGet(Util.readUnsignedWasmInt(stream));
-            case 0x26 -> new TableSet(Util.readUnsignedWasmInt(stream));
+            case 0x25 -> new TableGet(ParseHelper.readUnsignedWasmInt(stream));
+            case 0x26 -> new TableSet(ParseHelper.readUnsignedWasmInt(stream));
             case 0xFC -> {
-                int v = Util.readUnsignedWasmInt(stream);
+                int v = ParseHelper.readUnsignedWasmInt(stream);
                 yield switch (v) {
-                    case 12 -> new TableInit(Util.readUnsignedWasmInt(stream), Util.readUnsignedWasmInt(stream));
-                    case 13 -> new ElemDrop(Util.readUnsignedWasmInt(stream));
-                    case 14 -> new TableCopy(Util.readUnsignedWasmInt(stream), Util.readUnsignedWasmInt(stream));
-                    case 15 -> new TableGrow(Util.readUnsignedWasmInt(stream));
-                    case 16 -> new TableSize(Util.readUnsignedWasmInt(stream));
-                    case 17 -> new TableFill(Util.readUnsignedWasmInt(stream));
+                    case 12 -> new TableInit(ParseHelper.readUnsignedWasmInt(stream), ParseHelper.readUnsignedWasmInt(stream));
+                    case 13 -> new ElemDrop(ParseHelper.readUnsignedWasmInt(stream));
+                    case 14 -> new TableCopy(ParseHelper.readUnsignedWasmInt(stream), ParseHelper.readUnsignedWasmInt(stream));
+                    case 15 -> new TableGrow(ParseHelper.readUnsignedWasmInt(stream));
+                    case 16 -> new TableSize(ParseHelper.readUnsignedWasmInt(stream));
+                    case 17 -> new TableFill(ParseHelper.readUnsignedWasmInt(stream));
 
                     case 8 -> {
-                        Instruction result = new MemoryInit(Util.readUnsignedWasmInt(stream));
+                        Instruction result = new MemoryInit(ParseHelper.readUnsignedWasmInt(stream));
                         readMemIndex(stream);
                         yield result;
                     }
-                    case 9 -> new DataDrop(Util.readUnsignedWasmInt(stream));
+                    case 9 -> new DataDrop(ParseHelper.readUnsignedWasmInt(stream));
                     case 10 -> {
                         Instruction result = MemoryCopy.INSTANCE;
                         readMemIndex(stream);
@@ -591,8 +591,8 @@ public sealed interface Instruction {
             }
 
             case 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E -> {
-                int align = Util.readUnsignedWasmInt(stream);
-                int offset = Util.readUnsignedWasmInt(stream);
+                int align = ParseHelper.readUnsignedWasmInt(stream);
+                int offset = ParseHelper.readUnsignedWasmInt(stream);
                 yield switch (b) {
                     case 0x28 -> new I32Load(align, offset);
                     case 0x29 -> new I64Load(align, offset);
@@ -629,10 +629,10 @@ public sealed interface Instruction {
                 yield MemoryGrow.INSTANCE;
             }
 
-            case 0x41 -> new I32Const(Util.readSignedWasmInt(stream));
-            case 0x42 -> new I64Const(Util.readSignedWasmLong(stream));
-            case 0x43 -> new F32Const(Util.readFloat(stream));
-            case 0x44 -> new F64Const(Util.readDouble(stream));
+            case 0x41 -> new I32Const(ParseHelper.readSignedWasmInt(stream));
+            case 0x42 -> new I64Const(ParseHelper.readSignedWasmLong(stream));
+            case 0x43 -> new F32Const(ParseHelper.readFloat(stream));
+            case 0x44 -> new F64Const(ParseHelper.readDouble(stream));
 
             case 0x45 -> I32Eqz.INSTANCE;
             case 0x46 -> I32Eq.INSTANCE;
@@ -773,11 +773,11 @@ public sealed interface Instruction {
             case 0xC4 -> I64Extend32S.INSTANCE;
 
             case 0xFD -> {
-                int v = Util.readUnsignedWasmInt(stream);
+                int v = ParseHelper.readUnsignedWasmInt(stream);
                 yield switch (v) {
                     case 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 92, 93 -> {
-                        int align = Util.readUnsignedWasmInt(stream);
-                        int offset = Util.readUnsignedWasmInt(stream);
+                        int align = ParseHelper.readUnsignedWasmInt(stream);
+                        int offset = ParseHelper.readUnsignedWasmInt(stream);
                         yield switch (v) {
                             case 0 -> new V128Load(align, offset);
                             case 1 -> new V128Load8x8S(align, offset);
@@ -797,8 +797,8 @@ public sealed interface Instruction {
                         };
                     }
                     case 84, 85, 86, 87, 88, 89, 90, 91 -> {
-                        int align = Util.readUnsignedWasmInt(stream);
-                        int offset = Util.readUnsignedWasmInt(stream);
+                        int align = ParseHelper.readUnsignedWasmInt(stream);
+                        int offset = ParseHelper.readUnsignedWasmInt(stream);
                         byte laneIndex = (byte) stream.read();
                         yield switch (v) {
                             case 84 -> new V128Load8Lane(align, offset, laneIndex);
@@ -1069,7 +1069,7 @@ public sealed interface Instruction {
         return new ManyReadResult(result, instr == Else.INSTANCE);
     }
     private static void readMemIndex(InputStream stream) throws IOException, ModuleParseException {
-        if (Util.readUnsignedWasmInt(stream) != 0)
+        if (ParseHelper.readUnsignedWasmInt(stream) != 0)
             throw new ModuleParseException("Memory index must be 0");
     }
 }

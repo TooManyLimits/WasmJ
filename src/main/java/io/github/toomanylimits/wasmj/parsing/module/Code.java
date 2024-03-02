@@ -1,9 +1,9 @@
-package io.github.toomanylimits.wasmj.structure.module;
+package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.structure.instruction.Expression;
-import io.github.toomanylimits.wasmj.structure.types.FuncType;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
-import io.github.toomanylimits.wasmj.structure.utils.Util;
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
+import io.github.toomanylimits.wasmj.parsing.types.FuncType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -48,15 +48,15 @@ public class Code {
     // Requires passing additional data:
     // The index of this code, the list of all types in this module, and the list of all funcs in this module.
     public static Code read(int index, List<FuncType> types, List<Integer> funcs, InputStream stream) throws IOException, ModuleParseException {
-        int size = Util.readUnsignedWasmInt(stream);
-        int numLocalObjs = Util.readUnsignedWasmInt(stream);
+        int size = ParseHelper.readUnsignedWasmInt(stream);
+        int numLocalObjs = ParseHelper.readUnsignedWasmInt(stream);
         ArrayList<ValType> locals = new ArrayList<>();
         // Add func params as locals
         for (ValType type : types.get(funcs.get(index)).args)
             locals.add(type);
         // Add declared locals
         for (int i = 0; i < numLocalObjs; i++) {
-            int count = Util.readUnsignedWasmInt(stream);
+            int count = ParseHelper.readUnsignedWasmInt(stream);
             ValType type = ValType.read(stream);
             for (int j = 0; j < count; j++)
                 locals.add(type);

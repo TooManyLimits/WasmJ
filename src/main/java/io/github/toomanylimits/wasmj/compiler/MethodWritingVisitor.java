@@ -1,12 +1,12 @@
 package io.github.toomanylimits.wasmj.compiler;
 
-import io.github.toomanylimits.wasmj.structure.instruction.Instruction;
-import io.github.toomanylimits.wasmj.structure.instruction.StackType;
-import io.github.toomanylimits.wasmj.structure.module.Code;
-import io.github.toomanylimits.wasmj.structure.module.Import;
-import io.github.toomanylimits.wasmj.structure.module.WasmModule;
-import io.github.toomanylimits.wasmj.structure.types.FuncType;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
+import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
+import io.github.toomanylimits.wasmj.parsing.module.Code;
+import io.github.toomanylimits.wasmj.parsing.module.Import;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.parsing.types.FuncType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;

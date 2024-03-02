@@ -1,7 +1,7 @@
-import io.github.toomanylimits.wasmj.compiler.WasmInstance;
-import io.github.toomanylimits.wasmj.structure.module.Export;
-import io.github.toomanylimits.wasmj.structure.module.WasmModule;
-import io.github.toomanylimits.wasmj.structure.utils.ListUtils;
+import io.github.toomanylimits.wasmj.runtime.WasmInstance;
+import io.github.toomanylimits.wasmj.parsing.module.Export;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 
 import java.io.InputStream;
 import java.lang.invoke.MethodHandle;

@@ -1,7 +1,7 @@
-package io.github.toomanylimits.wasmj.structure.module;
+package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.structure.instruction.Expression;
-import io.github.toomanylimits.wasmj.structure.utils.Util;
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,16 +22,16 @@ public class Data {
     }
 
     public static Data read(InputStream stream) throws IOException, ModuleParseException {
-        int b = Util.readUnsignedWasmInt(stream);
+        int b = ParseHelper.readUnsignedWasmInt(stream);
         return switch (b) {
             case 0 -> {
                 Mode mode = new Mode.Active(0, Expression.read(stream));
-                yield new Data(Util.readByteArray(stream), mode);
+                yield new Data(ParseHelper.readByteArray(stream), mode);
             }
-            case 1 -> new Data(Util.readByteArray(stream), Mode.Passive.INSTANCE);
+            case 1 -> new Data(ParseHelper.readByteArray(stream), Mode.Passive.INSTANCE);
             case 2 -> {
-                Mode mode = new Mode.Active(Util.readUnsignedWasmInt(stream), Expression.read(stream));
-                yield new Data(Util.readByteArray(stream), mode);
+                Mode mode = new Mode.Active(ParseHelper.readUnsignedWasmInt(stream), Expression.read(stream));
+                yield new Data(ParseHelper.readByteArray(stream), mode);
             }
             default -> throw new ModuleParseException("Invalid Data Object, expected 0,1, or 2, got " + b);
         };

@@ -5,7 +5,7 @@ import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.runtime.ModuleInstance;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJRename;
-import io.github.toomanylimits.wasmj.structure.utils.ListUtils;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 

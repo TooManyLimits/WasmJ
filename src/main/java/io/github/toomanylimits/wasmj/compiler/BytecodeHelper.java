@@ -1,7 +1,7 @@
 package io.github.toomanylimits.wasmj.compiler;
 
 import io.github.toomanylimits.wasmj.runtime.WasmRuntimeError;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;

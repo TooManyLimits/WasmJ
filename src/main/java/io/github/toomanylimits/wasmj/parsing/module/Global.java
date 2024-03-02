@@ -1,7 +1,7 @@
-package io.github.toomanylimits.wasmj.structure.module;
+package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.structure.instruction.Expression;
-import io.github.toomanylimits.wasmj.structure.types.GlobalType;
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
+import io.github.toomanylimits.wasmj.parsing.types.GlobalType;
 
 import java.io.IOException;
 import java.io.InputStream;

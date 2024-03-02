@@ -1,8 +1,8 @@
-package io.github.toomanylimits.wasmj.structure.utils;
+package io.github.toomanylimits.wasmj.parsing;
 
-import io.github.toomanylimits.wasmj.structure.module.ModuleParseException;
-import io.github.toomanylimits.wasmj.structure.utils.funcs.BiThrowingBiFunction;
-import io.github.toomanylimits.wasmj.structure.utils.funcs.BiThrowingFunction;
+import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
+import io.github.toomanylimits.wasmj.util.funcs.BiThrowingBiFunction;
+import io.github.toomanylimits.wasmj.util.funcs.BiThrowingFunction;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-public class Util {
+public class ParseHelper {
 
     public static <R> List<R> readVector(InputStream stream, BiThrowingFunction<InputStream, R, ? extends IOException, ? extends ModuleParseException> func) throws IOException, ModuleParseException {
         int len = readUnsignedWasmInt(stream);

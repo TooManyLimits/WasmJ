@@ -1,4 +1,4 @@
-package io.github.toomanylimits.wasmj.structure.module;
+package io.github.toomanylimits.wasmj.parsing.module;
 
 public class ModuleParseException extends Exception {
     public ModuleParseException(String message) {

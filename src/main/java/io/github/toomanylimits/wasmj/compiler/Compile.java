@@ -1,15 +1,15 @@
 package io.github.toomanylimits.wasmj.compiler;
 
 import io.github.toomanylimits.wasmj.runtime.ModuleInstance;
-import io.github.toomanylimits.wasmj.structure.instruction.Instruction;
-import io.github.toomanylimits.wasmj.structure.module.Code;
-import io.github.toomanylimits.wasmj.structure.module.Data;
-import io.github.toomanylimits.wasmj.structure.module.Global;
-import io.github.toomanylimits.wasmj.structure.module.WasmModule;
-import io.github.toomanylimits.wasmj.structure.types.FuncType;
-import io.github.toomanylimits.wasmj.structure.types.Limits;
-import io.github.toomanylimits.wasmj.structure.types.TableType;
-import io.github.toomanylimits.wasmj.structure.types.ValType;
+import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
+import io.github.toomanylimits.wasmj.parsing.module.Code;
+import io.github.toomanylimits.wasmj.parsing.module.Data;
+import io.github.toomanylimits.wasmj.parsing.module.Global;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.parsing.types.FuncType;
+import io.github.toomanylimits.wasmj.parsing.types.Limits;
+import io.github.toomanylimits.wasmj.parsing.types.TableType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 
