@@ -7,6 +7,7 @@ import io.github.toomanylimits.wasmj.parsing.module.Import;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.parsing.types.FuncType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
@@ -21,8 +22,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     private final WasmModule module;
     private final Code code;
     private final MethodVisitor visitor;
+    private final Map<String, JavaModuleData<?>> javaModules;
 
-    public MethodWritingVisitor(String moduleName, WasmModule module, Code code, MethodVisitor visitor) {
+    public MethodWritingVisitor(Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module, Code code, MethodVisitor visitor) {
+        this.javaModules = javaModules;
         this.moduleName = moduleName;
         this.module = module;
         this.code = code;
@@ -308,11 +311,29 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         if (inst.index() < module.funcImports().size()) {
             // Calling an imported function
             Import.Func imported = module.funcImports().get(inst.index());
+            // Apply the stack type
             FuncType funcType = module.types.get(imported.typeIndex);
             if (funcType.results.size() > 1) throw new UnsupportedOperationException("Multi-return functions");
             abstractStack.applyStackType(funcType.asStackType());
-            // Invoke static
-            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(imported.moduleName), imported.elementName, funcType.descriptor(), false);
+            // Do something different depending on if this is a java function or a WASM function
+            if (javaModules.containsKey(imported.moduleName)) {
+                // Java function, need some thought put into it
+                JavaModuleData<?> moduleData = javaModules.get(imported.moduleName);
+                JavaModuleData.MethodData funcData = moduleData.allowedMethods.get(imported.elementName);
+                if (funcData == null)
+                    throw new IllegalStateException("Java function \"" + imported.moduleName + "." + imported.elementName + "\" does not exist (or is not allowed)");
+                // If the function isn't static, fetch the instance
+                if (!funcData.isStatic()) {
+                    // TODO: Fetch instance from static field
+                }
+                // TODO: Add additional params (like sandboxing or byte[] access) if the func needs them
+                // Call the function
+                int invokeOpcode = funcData.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL;
+                visitor.visitMethodInsn(invokeOpcode, moduleData.className(), funcData.javaName(), funcData.descriptor(), false);
+            } else {
+                // Wasm function, just invokestatic
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(imported.moduleName), imported.elementName, funcType.descriptor(), false);
+            }
         } else {
             int adjustedIndex = inst.index() - module.funcImports().size();
             FuncType funcType = module.types.get(module.functions.get(adjustedIndex));

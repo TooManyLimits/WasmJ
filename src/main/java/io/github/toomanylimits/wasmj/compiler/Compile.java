@@ -10,6 +10,7 @@ import io.github.toomanylimits.wasmj.parsing.types.FuncType;
 import io.github.toomanylimits.wasmj.parsing.types.Limits;
 import io.github.toomanylimits.wasmj.parsing.types.TableType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 
@@ -17,6 +18,7 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.List;
+import java.util.Map;
 
 public class Compile {
 
@@ -39,21 +41,21 @@ public class Compile {
 
     // Instantiates the given module and creates a ByteArray, which is the bytecode for a class
     // implementing ModuleInstance.
-    public static byte[] compileModule(String moduleName, WasmModule module) {
+    public static byte[] compileModule(Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
 
         // Create the class writer and fill some data about the class
         ClassVisitor writer = new CheckClassAdapter(new ClassWriter(ClassWriter.COMPUTE_FRAMES + ClassWriter.COMPUTE_MAXS));
         String className = getClassName(moduleName);
         writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), new String[] { Type.getInternalName(ModuleInstance.class) });
 
-        emitFunctions(writer, moduleName, module);
+        emitFunctions(writer, javaModules, moduleName, module);
 
         // Create the <clinit> class-initialization method
         MethodVisitor clinit = writer.visitMethod(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
         clinit.visitCode();
-        emitGlobals(writer, moduleName, module, clinit);
+        emitGlobals(writer, javaModules, moduleName, module, clinit);
         emitMemory(writer, moduleName, module, clinit);
-        emitDatas(writer, moduleName, module, clinit);
+        emitDatas(writer, javaModules, moduleName, module, clinit);
         emitTables(writer, moduleName, module, clinit);
         clinit.visitInsn(Opcodes.RETURN);
         clinit.visitMaxs(0, 0);
@@ -65,7 +67,7 @@ public class Compile {
         return ((ClassWriter) writer.getDelegate()).toByteArray();
     }
 
-    private static void emitFunctions(ClassVisitor writer, String moduleName, WasmModule module) {
+    private static void emitFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
         // Create the various functions
         for (int index = 0; index < module.functions.size(); index++) {
             int funcTypeIndex = module.functions.get(index);
@@ -80,7 +82,7 @@ public class Compile {
             String funcName = getFuncName(index);
             // Generate the code
             Code code = module.codes.get(index);
-            MethodVisitor visitor = writer.visitMethod(access, funcName, funcType.descriptor(), null, null);
+            MethodVisitor visitor = writer.visitMethod(access, funcName, descriptor, null, null);
             visitor.visitCode();
             // Initialize all locals to 0/null, since WASM expects this
             for (int localIndex = funcType.args.size(); localIndex < code.locals.size(); localIndex++) {
@@ -95,7 +97,7 @@ public class Compile {
                 BytecodeHelper.storeLocal(visitor, mappedIndex, localType);
             }
             // Visit instructions
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(moduleName, module, code, visitor);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, moduleName, module, code, visitor);
             for (Instruction inst : code.expr.instrs())
                 inst.accept(instVisitor);
             // Emit a return
@@ -110,7 +112,7 @@ public class Compile {
         // TODO: For each export, generate a public function that delegates to the exported one
     }
 
-    private static void emitGlobals(ClassVisitor writer, String moduleName, WasmModule module, MethodVisitor clinit) {
+    private static void emitGlobals(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module, MethodVisitor clinit) {
         // Create the various globals, and initialize them in clinit.
         String className = getClassName(moduleName);
         for (int index = 0; index < module.globals.size(); index++) {
@@ -119,7 +121,7 @@ public class Compile {
             // Create field:
             writer.visitField(access, getGlobalName(index), global.globalType().valType().desc(), null, null);
             // Initialize:
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(moduleName, module, new Code(-1, -1, List.of(), global.initializer()), clinit);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, moduleName, module, new Code(-1, -1, List.of(), global.initializer()), clinit);
             for (Instruction inst : global.initializer().instrs())
                 inst.accept(instVisitor);
             clinit.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().desc());
@@ -158,13 +160,13 @@ public class Compile {
         // TODO: For each export, generate a public function to grab the byte[]
     }
 
-    private static void emitDatas(ClassVisitor writer, String moduleName, WasmModule module, MethodVisitor clinit) {
+    private static void emitDatas(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module, MethodVisitor clinit) {
         for (int dataIndex = 0; dataIndex < module.datas.size(); dataIndex++) {
             Data data = module.datas.get(dataIndex);
             // TODO: Make this use a more efficient system for initializing bytes, this one is complete garbage lol
             if (data.mode instanceof Data.Mode.Active activeMode) {
                 clinit.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(activeMode.memIndex()), "[B");
-                MethodWritingVisitor instVisitor = new MethodWritingVisitor(moduleName, module, new Code(-1, -1, List.of(), activeMode.offset()), clinit);
+                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, moduleName, module, new Code(-1, -1, List.of(), activeMode.offset()), clinit);
                 for (Instruction inst : activeMode.offset().instrs())
                     inst.accept(instVisitor);
                 for (byte b : data.init) {

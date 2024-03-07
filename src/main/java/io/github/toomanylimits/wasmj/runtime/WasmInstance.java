@@ -1,15 +1,18 @@
 package io.github.toomanylimits.wasmj.runtime;
 
 import io.github.toomanylimits.wasmj.compiler.Compile;
+import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.reflect.Reflector;
 import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
-import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -17,34 +20,44 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WasmInstance {
 
-    // Temporary public for testing code
-    private final HashMap<String, ModuleInstance> modules = new HashMap<>();
     private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), false);
+    private final Set<String> wasmModuleNames = new HashSet<>();
+    private final Map<String, JavaModuleData<?>> javaModuleData = new HashMap<>();
 
     public WasmInstance() {
-        // Add WasmJ impl as a module
-        instantiateCompiledModule("WasmJ", Reflector.reflectStaticModule("WasmJ", WasmJImpl.class));
+        // Add WasmJ impl as a java module TODO: Remove
+        addJavaModule("WasmJ", WasmJImpl.class, null);
     }
 
-    public void instantiateModule(String moduleName, WasmModule module) {
-        instantiateCompiledModule(moduleName, Compile.compileModule(moduleName, module));
-    }
-    void instantiateCompiledModule(String moduleName, byte[] compiledModule) {
-        if (modules.containsKey(moduleName))
-            throw new IllegalArgumentException("There is already a module named \"$moduleName\" in this wasm instance");
-        loader.classes.put(Compile.getClassName(moduleName), compiledModule);
-        try {
-            ModuleInstance moduleInstance = (ModuleInstance) loader.findClass(
-                    Compile.getClassName(moduleName).replace('/', '.')
-            ).getConstructor().newInstance();
-            modules.put(moduleName, moduleInstance);
-        } catch (NoSuchMethodException | InvocationTargetException | InstantiationException | IllegalAccessException e) {
-            throw new IllegalArgumentException("There should always be a valid constructor?", e);
-        }
+    public void addWasmModule(String moduleName, WasmModule module) {
+        if (wasmModuleNames.contains(moduleName) || javaModuleData.containsKey(moduleName))
+            throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
+        wasmModuleNames.add(moduleName);
+        // Compile the module and add it to the custom classloader
+        byte[] compiled = Compile.compileModule(javaModuleData, moduleName, module);
+        loader.classes.put(Compile.getClassName(moduleName), compiled);
     }
 
-    public ModuleInstance getModule(String moduleName) {
-        return modules.get(moduleName);
+    /**
+     * All java modules should be added before adding any WASM modules.
+     * A Java module is a class. Methods can be annotated in said class
+     * with @WasmJAllow to make them callable by WASM code. The instance
+     * is nullable; if you pass in a null instance then it's expected that
+     * all annotated methods are static.
+     */
+    public <T> void addJavaModule(String moduleName, Class<T> moduleClass, T nullableInstance) {
+        if (javaModuleData.containsKey(moduleName))
+            throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
+        if (!wasmModuleNames.isEmpty())
+            throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
+        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, nullableInstance));
+    }
+
+    /**
+     * Get the jvm class generated from the wasm module with the given name
+     */
+    public Class<?> getWasmClass(String wasmModuleName) {
+        return loader.findClass(Compile.getClassName(wasmModuleName).replace('/', '.'));
     }
 
     /**

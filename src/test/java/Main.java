@@ -19,10 +19,10 @@ public class Main {
         System.out.println(module);
 
         WasmInstance instance = new WasmInstance();
-        instance.instantiateModule("aaa", module);
+        instance.addWasmModule("aaa", module);
 
         // Test code
-        Class<?> c = instance.getModule("aaa").getClass();
+        Class<?> c = instance.getWasmClass("aaa");
         Method m = c.getDeclaredMethod("func_" + (ListUtils.filter(module.exports, it -> it.type() == Export.ExportType.FUNC).get(0).index() - module.funcImports().size()));
         m.trySetAccessible();
         MethodHandle mh = MethodHandles.lookup().unreflect(m);
