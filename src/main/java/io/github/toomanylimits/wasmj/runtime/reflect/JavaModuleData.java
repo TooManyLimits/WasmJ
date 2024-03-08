@@ -5,6 +5,7 @@ import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJRename;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.Type;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.Map;
@@ -47,12 +48,9 @@ public class JavaModuleData<T> {
                 },
                 method -> {
                     // Get value
-                    boolean isStatic = Modifier.isStatic(method.getModifiers());
-                    if (!isStatic && nullableInstance == null)
+                    if (!Modifier.isStatic(method.getModifiers()) && nullableInstance == null)
                         throw new IllegalArgumentException("Method \"" + method.getName() + "\" is non-static, and allowed, but the given instance is null!");
-                    String javaName = method.getName();
-                    String descriptor = Type.getMethodDescriptor(method);
-                    return new MethodData(isStatic, javaName, descriptor);
+                    return new MethodData(method);
                 });
     }
 
@@ -60,8 +58,16 @@ public class JavaModuleData<T> {
         return Type.getInternalName(moduleClass);
     }
 
-    public record MethodData(boolean isStatic, String javaName, String descriptor) {
-
+    public record MethodData(Method method) {
+        public boolean isStatic() {
+            return Modifier.isStatic(method.getModifiers());
+        }
+        public String javaName() {
+            return method.getName();
+        }
+        public String descriptor() {
+            return Type.getMethodDescriptor(method);
+        }
     }
 
 }

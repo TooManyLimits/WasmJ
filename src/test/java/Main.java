@@ -21,7 +21,7 @@ public class Main {
         WasmInstance instance = new WasmInstance();
         instance.addWasmModule("aaa", module);
 
-        // Test code
+        // Testing code
         Class<?> c = instance.getWasmClass("aaa");
         Method m = c.getDeclaredMethod("func_" + (ListUtils.filter(module.exports, it -> it.type() == Export.ExportType.FUNC).get(0).index() - module.funcImports().size()));
         m.trySetAccessible();
@@ -32,11 +32,11 @@ public class Main {
         mh.invokeExact();
         long end2 = System.nanoTime();
         long start3 = System.nanoTime();
-        for (int x = 0; x < 1000; x++)
+        for (int x = 0; x < 100000; x++)
             mh.invokeExact();
         long end3 = System.nanoTime();
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");
         System.out.println("Execution took " + (end2 - end) / 1_000_000.0 + " ms on second run");
-        System.out.println("Executing 1,000 times took " + (end3 - start3) / 1_000_000.0 + " ms");
+        System.out.println("Executing 100,000 times took " + (end3 - start3) / 1_000_000.0 + " ms");
     }
 }

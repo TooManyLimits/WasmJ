@@ -3,7 +3,6 @@ package io.github.toomanylimits.wasmj.runtime;
 import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
-import io.github.toomanylimits.wasmj.runtime.reflect.Reflector;
 import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;

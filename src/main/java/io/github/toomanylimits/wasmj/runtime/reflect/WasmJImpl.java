@@ -22,7 +22,7 @@ public class WasmJImpl {
 
     @WasmJAllow
     public static void print_obj(Object o) {
-        System.out.println(o);
+//        System.out.println(o); // Extremely slow, comment it out for any performance testing
     }
 
     // Counter, testing code
