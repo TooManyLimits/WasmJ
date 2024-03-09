@@ -17,9 +17,8 @@ public class Main {
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
-        System.out.println(module);
 
-        WasmInstance instance = new WasmInstance(10000);
+        WasmInstance instance = new WasmInstance(Long.MAX_VALUE);
         instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
         instance.addWasmModule("aaa", module);
 
@@ -41,5 +40,7 @@ public class Main {
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");
         System.out.println("Execution took " + (end2 - end) / 1_000_000.0 + " ms on second run");
         System.out.println("Executing 100,000 times took " + (end3 - start3) / 1_000_000.0 + " ms");
+
+        System.out.println(instance.limiter.getInstructions() + " instructions executed");
     }
 }

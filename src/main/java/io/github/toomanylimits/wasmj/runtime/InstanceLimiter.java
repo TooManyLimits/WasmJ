@@ -36,6 +36,7 @@ public class InstanceLimiter {
     public long getInstructions() { return instructionsExecuted; }
     public void setInstructions(long instructions) { instructionsExecuted = instructions; }
     public void incInstructions(long instructions) throws OutOfInstructionsException {
+//        System.out.println(instructionsExecuted + " instructions executed. Incrementing by " + instructions + "...");
         // Increment, and error if we've gone too high. Also, error on overflow.
         // addExact *should* be intrinsified, probably, so this isn't a big performance hit.
         // It's not expected for instructionsExecuted to ever overflow,

@@ -19,8 +19,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WasmInstance {
 
-    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), false);
-    private final InstanceLimiter limiter;
+    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), true);
+    public final InstanceLimiter limiter;
 
     private final Set<String> wasmModuleNames = new HashSet<>();
     private final Map<String, JavaModuleData<?>> javaModuleData = new HashMap<>();
@@ -36,7 +36,7 @@ public class WasmInstance {
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         wasmModuleNames.add(moduleName);
         // Compile the module and add it to the custom classloader
-        byte[] compiled = Compile.compileModule(javaModuleData, moduleName, module);
+        byte[] compiled = Compile.compileModule(javaModuleData, limiter, moduleName, module);
         loader.classes.put(Compile.getClassName(moduleName), compiled);
         // Get the wasm class, set up the limiter, and initialize it
         // TODO: Also set up global apis from JavaModuleData<?> instances

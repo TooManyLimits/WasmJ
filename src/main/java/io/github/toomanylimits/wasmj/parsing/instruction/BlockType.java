@@ -3,6 +3,7 @@ package io.github.toomanylimits.wasmj.parsing.instruction;
 import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 
 import java.io.IOException;
 import java.io.InputStream;

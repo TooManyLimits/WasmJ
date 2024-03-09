@@ -25,6 +25,14 @@ public class ListUtils {
         return result;
     }
 
+    public static <T, E extends Throwable> int indexOf(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
+        for (int i = 0; i < list.size(); i++) {
+            if (pred.accept(list.get(i)))
+                return i;
+        }
+        return -1;
+    }
+
     public static <T, K, V, E extends Throwable> Map<K, V> toMap(List<T> list, ThrowingFunction<T, K, E> keyGetter, ThrowingFunction<T, V, E> valueGetter) throws E {
         Map<K, V> result = new HashMap<>(list.size());
         for (T elem : list)

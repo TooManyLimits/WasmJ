@@ -22,11 +22,8 @@ public class WasmJImpl {
     @ByteArrayAccess
     @LimiterAccess
     public static void print_str(int ptr, int len, byte[] mem, InstanceLimiter limiter) {
-        // Printing costs 1000 instructions!!! >:3
-        limiter.incInstructions(1000);
-
         String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
-        System.out.println(s);
+//        System.out.println(s);
     }
 
     @WasmJAllow

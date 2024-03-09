@@ -1,5 +1,7 @@
 package io.github.toomanylimits.wasmj.compiler;
 
+import io.github.toomanylimits.wasmj.parsing.instruction.BlockType;
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
 import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
 import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
 import io.github.toomanylimits.wasmj.parsing.module.Code;
@@ -24,9 +26,11 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     private final Code code;
     private final MethodVisitor visitor;
     private final Map<String, JavaModuleData<?>> javaModules;
+    private final InstanceLimiter limiter;
 
-    public MethodWritingVisitor(Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module, Code code, MethodVisitor visitor) {
+    public MethodWritingVisitor(Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, Code code, MethodVisitor visitor) {
         this.javaModules = javaModules;
+        this.limiter = limiter;
         this.moduleName = moduleName;
         this.module = module;
         this.code = code;
@@ -107,6 +111,63 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     private final AbstractStack abstractStack = new AbstractStack();
 
+    public void visitExpr(Expression expr) {
+        // Works similarly to a block, just without the type-tracking business
+        // Before emitting anything, first count up the number of instructions guaranteed to add by:
+        CostCountingVisitor costCounter = new CostCountingVisitor();
+        long currentCost = 0;
+        Iterator<Instruction> iterator = expr.getInstrsAndIKnowWhatImDoing().iterator();
+        Instruction next = null;
+        while (iterator.hasNext()) {
+            next = iterator.next();
+            Long cost = next.accept(costCounter);
+            if (cost == null) {
+                break;
+            } else {
+                currentCost += cost;
+            }
+        }
+        incrementInstructions(currentCost); // And emit those
+        for (Instruction inner : expr.getInstrsAndIKnowWhatImDoing()) {
+            inner.accept(this);
+            if (inner == next) {
+                // Do it again, counting up the elements that occur after "inner" does, until the next null-returner
+                currentCost = 0;
+                while (iterator.hasNext()) {
+                    next = iterator.next();
+                    Long cost = next.accept(costCounter);
+                    if (cost == null) {
+                        break;
+                    } else {
+                        currentCost += cost;
+                    }
+                }
+                // Add the cost now, after the inner instruction happens
+                incrementInstructions(currentCost);
+            }
+        }
+    }
+
+    private void incrementInstructions(long count) {
+        if (limiter.countsInstructions && count > 0) {
+            // Get limiter, get count, call inc
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+            BytecodeHelper.constLong(visitor, count);
+            visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incInstructions", "(J)V", false);
+        }
+    }
+
+    // Increments instructions, using the long value on top of the stack as the count. Consumes the long.
+    private void incrementInstructionsByTopElement() {
+        if (limiter.countsInstructions) {
+            // Get limiter, swap, call inc
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+            visitor.visitInsn(Opcodes.DUP_X2);
+            visitor.visitInsn(Opcodes.POP);
+            visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incInstructions", "(J)V", false);
+        }
+    }
+
     @Override public Void visitEnd(Instruction.End inst) {
         throw new UnsupportedOperationException("Not yet implemented");
     }
@@ -128,13 +189,45 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Declare label, visit inner instructions, emit label
     @Override public Void visitBlock(Instruction.Block inst) {
+        // Before emitting anything, first count up the number of instructions guaranteed to add by:
+        CostCountingVisitor costCounter = new CostCountingVisitor();
+        long currentCost = 0;
+        Iterator<Instruction> iterator = inst.inside().iterator();
+        Instruction next = null;
+        while (iterator.hasNext()) {
+            next = iterator.next();
+            Long cost = next.accept(costCounter);
+            if (cost == null) {
+                break;
+            } else {
+                currentCost += cost;
+            }
+        }
+        incrementInstructions(currentCost); // And emit those
+
         StackType stackType = inst.bt().stackType(module);
         Label label = new Label();
         AbstractStackElement labelElem = new AbstractStackElement.LabelElement(label, stackType.outTypes().size());
         abstractStack.add(stackType.inTypes().size(), labelElem);
         int stackHeightBefore = abstractStack.size();
-        for (Instruction inner : inst.inside())
+        for (Instruction inner : inst.inside()) {
             inner.accept(this);
+            if (inner == next) {
+                // Do it again, counting up the elements that occur after "inner" does, until the next null-returner
+                currentCost = 0;
+                while (iterator.hasNext()) {
+                    next = iterator.next();
+                    Long cost = next.accept(costCounter);
+                    if (cost == null) {
+                        break;
+                    } else {
+                        currentCost += cost;
+                    }
+                }
+                // Add the cost now, after the inner instruction happens
+                incrementInstructions(currentCost);
+            }
+        }
         int stackHeightAfter = abstractStack.size();
         if (stackHeightAfter - stackHeightBefore != stackType.outTypes().size() - stackType.inTypes().size()) {
             if (stackHeightAfter - stackHeightBefore < stackType.outTypes().size() - stackType.inTypes().size())
@@ -153,13 +246,47 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Declare and emit label, visit inner instructions
     @Override public Void visitLoop(Instruction.Loop inst) {
+
+        // Before emitting anything, first count up the number of instructions guaranteed to add by:
+        CostCountingVisitor costCounter = new CostCountingVisitor();
+        long currentCost = 0;
+        Iterator<Instruction> iterator = inst.inside().iterator();
+        Instruction next = null;
+        while (iterator.hasNext()) {
+            next = iterator.next();
+            Long cost = next.accept(costCounter);
+            if (cost == null) {
+                break;
+            } else {
+                currentCost += cost;
+            }
+        }
+        incrementInstructions(currentCost); // And emit those
+
+        // Now proceed with the regular loop body
         StackType stackType = inst.bt().stackType(module);
         Label label = new Label();
         AbstractStackElement labelElem = new AbstractStackElement.LabelElement(label, stackType.inTypes().size());
         abstractStack.add(stackType.inTypes().size(), labelElem);
         visitor.visitLabel(label);
-        for (Instruction inner : inst.inside())
+        for (Instruction inner : inst.inside()) {
             inner.accept(this);
+            if (inner == next) {
+                // Do it again, counting up the elements that occur after "inner" does, until the next null-returner
+                currentCost = 0;
+                while (iterator.hasNext()) {
+                    next = iterator.next();
+                    Long cost = next.accept(costCounter);
+                    if (cost == null) {
+                        break;
+                    } else {
+                        currentCost += cost;
+                    }
+                }
+                // Add the cost now, after the inner instruction happens
+                incrementInstructions(currentCost);
+            }
+        }
         if (!abstractStack.remove(labelElem)) throw new IllegalStateException("Bug in compiler, please report");
         return null;
     }
@@ -520,9 +647,23 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitTableGrow(Instruction.TableGrow inst) {
+
         abstractStack.popExpecting(ValType.i32);
         abstractStack.popExpecting(ValType.funcref, ValType.externref);
         abstractStack.push(new AbstractStackElement.ValueElement(ValType.i32));
+
+        // If counting instructions, then increment instruction counter by
+        // currentSize + requestedEntries. This is to pay for the arraycopy + fill.
+        if (limiter.countsInstructions) {
+            // [fillValue, requestedEntries]
+            visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, requestedEntries]
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), Compile.TABLE_DESCRIPTOR); // [fillValue, requestedEntries, requestedEntries, table]
+            visitor.visitInsn(Opcodes.ARRAYLENGTH); // [fillValue, requestedEntries, requestedEntries, table.length]
+            visitor.visitInsn(Opcodes.IADD); // [fillValue, requestedEntries, requestedEntries + table.length]
+            visitor.visitInsn(Opcodes.I2L); // [fillValue, requestedEntries, (long) (requestedEntries + table.length)]
+            incrementInstructionsByTopElement(); // [fillValue, requestedEntries]
+        }
+
         // Stack = [fillValue, requestedEntries]
         visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), Compile.TABLE_DESCRIPTOR); // [fillValue, requestedEntries, table]
         visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, table, table]
@@ -547,7 +688,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.SWAP); // [newTable, table.length, fillValue]
         BytecodeHelper.loadLocal(visitor, code.nextLocalSlot() + 1, ValType.i32); // [newTable, table.length, fillValue, newTableLength]
         visitor.visitInsn(Opcodes.SWAP); // [newTable, table.length, newTableLength, fillValue]
-        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Arrays.class), "fill", "(Ljava/lang/Object;IILjava/lang/Object;)V", false); // []
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Arrays.class), "fill", "([Ljava/lang/Object;IILjava/lang/Object;)V", false); // []
         BytecodeHelper.loadLocal(visitor, code.nextLocalSlot(), ValType.i32); // [table.length]
         return null;
     }
@@ -780,6 +921,18 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     @Override public Void visitMemoryGrow(Instruction.MemoryGrow inst) {
         BytecodeHelper.debugPrintln(visitor, "memory.grow was called");
         abstractStack.applyStackType(inst.stackType());
+
+        // If counting instructions, then increment instruction counter by
+        // currentSize.length / 8 (arbitrary). This is to pay for the arraycopy.
+        if (limiter.countsInstructions) {
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B"); // [memArray]
+            visitor.visitInsn(Opcodes.ARRAYLENGTH);
+            visitor.visitInsn(Opcodes.I2L);
+            BytecodeHelper.constLong(visitor, 8L);
+            visitor.visitInsn(Opcodes.LDIV);
+            incrementInstructionsByTopElement();
+        }
+
         // Stack = [requestedPages]
         BytecodeHelper.constInt(visitor, Compile.WASM_PAGE_SIZE); // [requestedPages, pageSize]
         visitor.visitInsn(Opcodes.IMUL); // [requestedPages * pageSize]
@@ -1271,9 +1424,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         return null;
     }
     @Override public Void visitF32Nearest(Instruction.F32Nearest inst) {
-        // It's supposed to round to even instead of rounding up but I dont care leave me alone
         abstractStack.applyStackType(inst.stackType());
-        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Math", "round", "(F)F", false);
+        visitor.visitInsn(Opcodes.F2D);
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Math", "rint", "(F)F", false);
+        visitor.visitInsn(Opcodes.D2F);
         return null;
     }
     @Override public Void visitF32Sqrt(Instruction.F32Sqrt inst) {
@@ -1355,9 +1509,8 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         return null;
     }
     @Override public Void visitF64Nearest(Instruction.F64Nearest inst) {
-        // It's supposed to round to even instead of rounding up but I dont care leave me alone
         abstractStack.applyStackType(inst.stackType());
-        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Math", "round", "(D)D", false);
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Math", "rint", "(D)D", false);
         return null;
     }
     @Override public Void visitF64Sqrt(Instruction.F64Sqrt inst) {
