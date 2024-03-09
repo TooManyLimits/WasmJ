@@ -7,6 +7,7 @@ import io.github.toomanylimits.wasmj.parsing.module.Import;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.parsing.types.FuncType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.runtime.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -322,11 +323,28 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 JavaModuleData.MethodData funcData = moduleData.allowedMethods.get(imported.elementName);
                 if (funcData == null)
                     throw new IllegalStateException("Java function \"" + imported.moduleName + "." + imported.elementName + "\" does not exist (or is not allowed)");
+
                 // If the function isn't static, fetch the instance
                 if (!funcData.isStatic()) {
                     // TODO: Fetch instance from static field
                 }
-                // TODO: Add additional params (like sandboxing or byte[] access) if the func needs them
+
+                // Fetch the byte[] and/or the limiter, if the function needs them
+                if (funcData.hasByteArrayAccess()) {
+                    // If the func has byte array access, put the byte array on the stack
+                    if (module.memories.isEmpty()) {
+                        // There are no memories, give null
+                        visitor.visitInsn(Opcodes.ACONST_NULL);
+                    } else {
+                        // Get the memory byte[] and put on the stack
+                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B");
+                    }
+                }
+                if (funcData.hasLimiterAccess()) {
+                    // Get the limiter and put on the stack
+                    visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+                }
+
                 // Call the function
                 int invokeOpcode = funcData.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL;
                 visitor.visitMethodInsn(invokeOpcode, moduleData.className(), funcData.javaName(), funcData.descriptor(), false);

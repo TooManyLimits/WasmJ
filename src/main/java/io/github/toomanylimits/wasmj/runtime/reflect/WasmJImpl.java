@@ -1,8 +1,16 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
-import io.github.toomanylimits.wasmj.runtime.WasmRuntimeError;
+import io.github.toomanylimits.wasmj.runtime.InstanceLimiter;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmRuntimeException;
+import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
+import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
 
+import java.nio.charset.StandardCharsets;
+
+/**
+ * This class acts as a JavaModule which can be added into a WasmInstance.
+ */
 public class WasmJImpl {
 
     @WasmJAllow
@@ -11,13 +19,31 @@ public class WasmJImpl {
     }
 
     @WasmJAllow
+    @ByteArrayAccess
+    @LimiterAccess
+    public static void print_str(int ptr, int len, byte[] mem, InstanceLimiter limiter) {
+        // Printing costs 1000 instructions!!! >:3
+        limiter.incInstructions(1000);
+
+        String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
+        System.out.println(s);
+    }
+
+    @WasmJAllow
     public static void err_char(int c) {
         System.err.print(Character.toString(c));
     }
 
     @WasmJAllow
-    public static void err() throws WasmRuntimeError {
-        throw new WasmRuntimeError("Program errored!");
+    @ByteArrayAccess
+    public static void err_str(int ptr, int len, byte[] mem) {
+        String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
+        System.err.print(s);
+    }
+
+    @WasmJAllow
+    public static void err() throws WasmRuntimeException {
+        throw new WasmRuntimeException("Program errored!");
     }
 
     @WasmJAllow

@@ -1,6 +1,6 @@
 package io.github.toomanylimits.wasmj.compiler;
 
-import io.github.toomanylimits.wasmj.runtime.WasmRuntimeError;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmRuntimeException;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
@@ -28,7 +28,7 @@ public class BytecodeHelper {
     }
     // Emit bytecode that throws a WasmJ runtime error with the given constant message
     public static void throwRuntimeError(MethodVisitor visitor, String message) {
-        String errorName = Type.getInternalName(WasmRuntimeError.class);
+        String errorName = Type.getInternalName(WasmRuntimeException.class);
         visitor.visitTypeInsn(Opcodes.NEW, errorName);
         visitor.visitInsn(Opcodes.DUP);
         visitor.visitLdcInsn(message);

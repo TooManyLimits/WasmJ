@@ -1,6 +1,7 @@
 import io.github.toomanylimits.wasmj.runtime.WasmInstance;
 import io.github.toomanylimits.wasmj.parsing.module.Export;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 
 import java.io.InputStream;
@@ -12,13 +13,14 @@ import java.lang.reflect.Method;
 public class Main {
     public static void main(String[] args) throws Throwable {
 
-        InputStream inStream = Main.class.getResourceAsStream("test_counter.wasm");
+        InputStream inStream = Main.class.getResourceAsStream("test_string.wasm");
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
         System.out.println(module);
 
-        WasmInstance instance = new WasmInstance();
+        WasmInstance instance = new WasmInstance(10000);
+        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
         instance.addWasmModule("aaa", module);
 
         // Testing code
@@ -35,6 +37,7 @@ public class Main {
         for (int x = 0; x < 100000; x++)
             mh.invokeExact();
         long end3 = System.nanoTime();
+        System.out.println();
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");
         System.out.println("Execution took " + (end2 - end) / 1_000_000.0 + " ms on second run");
         System.out.println("Executing 100,000 times took " + (end3 - start3) / 1_000_000.0 + " ms");

@@ -1,5 +1,7 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
+import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
+import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJRename;
 import io.github.toomanylimits.wasmj.util.ListUtils;
@@ -67,6 +69,13 @@ public class JavaModuleData<T> {
         }
         public String descriptor() {
             return Type.getMethodDescriptor(method);
+        }
+
+        public boolean hasByteArrayAccess() {
+            return method.isAnnotationPresent(ByteArrayAccess.class);
+        }
+        public boolean hasLimiterAccess() {
+            return method.isAnnotationPresent(LimiterAccess.class);
         }
     }
 

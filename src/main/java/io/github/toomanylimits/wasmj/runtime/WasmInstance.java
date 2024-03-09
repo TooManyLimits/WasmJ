@@ -20,12 +20,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class WasmInstance {
 
     private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), false);
+    private final InstanceLimiter limiter;
+
     private final Set<String> wasmModuleNames = new HashSet<>();
     private final Map<String, JavaModuleData<?>> javaModuleData = new HashMap<>();
 
-    public WasmInstance() {
-        // Add WasmJ impl as a java module TODO: Remove
-        addJavaModule("WasmJ", WasmJImpl.class, null);
+    // The parameters to this are just used to create an InstanceLimiter for sandboxing.
+    // Check InstanceLimiter for information on them.
+    public WasmInstance(long maxInstructions) {
+        limiter = new InstanceLimiter(maxInstructions);
     }
 
     public void addWasmModule(String moduleName, WasmModule module) {
@@ -35,6 +38,15 @@ public class WasmInstance {
         // Compile the module and add it to the custom classloader
         byte[] compiled = Compile.compileModule(javaModuleData, moduleName, module);
         loader.classes.put(Compile.getClassName(moduleName), compiled);
+        // Get the wasm class, set up the limiter, and initialize it
+        // TODO: Also set up global apis from JavaModuleData<?> instances
+        try {
+            Class<?> c = getWasmClass(moduleName);
+            c.getField(Compile.getLimiterName()).set(null, limiter);
+            c.getDeclaredMethod(Compile.getInitMethodName()).invoke(null);
+        } catch (Throwable e) {
+            throw new IllegalStateException("Failed to set limiter field? Should always succeed!", e);
+        }
     }
 
     /**
@@ -56,7 +68,13 @@ public class WasmInstance {
      * Get the jvm class generated from the wasm module with the given name
      */
     public Class<?> getWasmClass(String wasmModuleName) {
-        return loader.findClass(Compile.getClassName(wasmModuleName).replace('/', '.'));
+        if (!wasmModuleNames.contains(wasmModuleName))
+            throw new IllegalArgumentException("No WASM module with name \"" + wasmModuleName + "\" was added to this instance");
+        try {
+            return loader.loadClass(Compile.getClassName(wasmModuleName).replace('/', '.'));
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("The class \"" + wasmModuleName + "\" was added to the instance, but could not be found in the class loader? Internal bug!", e);
+        }
     }
 
     /**
@@ -76,7 +94,7 @@ public class WasmInstance {
             this.debugBytecode = debugBytecode;
         }
 
-        public Class<?> findClass(String name) {
+        protected Class<?> findClass(String name) {
             String runtimeName = name.replace('.', '/');
             byte[] bytes = classes.remove(runtimeName);
             if (bytes == null)
