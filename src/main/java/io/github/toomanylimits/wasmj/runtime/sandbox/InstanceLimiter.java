@@ -1,6 +1,7 @@
-package io.github.toomanylimits.wasmj.runtime;
+package io.github.toomanylimits.wasmj.runtime.sandbox;
 
-import io.github.toomanylimits.wasmj.runtime.errors.OutOfInstructionsException;
+import io.github.toomanylimits.wasmj.runtime.errors.TooManyInstructionsException;
+import io.github.toomanylimits.wasmj.runtime.errors.TooMuchHeapMemoryException;
 
 /**
  * An object that tracks the usage of JVM heap memory for a
@@ -20,22 +21,30 @@ public class InstanceLimiter {
     private long instructionsExecuted; // The current number of instructions executed
 
     // Memory counting variables (TODO)
-    public final boolean countsMemory = false;
+    public final boolean countsMemory; // Whether this instance counts memory usage at all
+    public final long maxJvmHeapMemory; // The maximum jvm heap memory before this errors
+    private long heapMemoryUsed; // The current amount of jvm heap memory used
 
     // Pass -1 if you want the limiter to not track that variable at all.
     // Can improve performance, since the code doesn't need to increment
     // variables and make checks all the time.
-    public InstanceLimiter(long maxInstructions) {
+    public InstanceLimiter(long maxInstructions, long maxJvmHeapMemory) {
         this.countsInstructions = (maxInstructions != -1);
         this.maxInstructions = maxInstructions == -1 ? Long.MAX_VALUE : maxInstructions;
+        this.countsMemory = (maxJvmHeapMemory != -1);
+        this.maxJvmHeapMemory = maxJvmHeapMemory == -1 ? Long.MAX_VALUE : maxJvmHeapMemory;
     }
 
     // Getter and setter for the current # of instructions executed.
     // There's also a way to increment the instructions, check if
     // we've gone over the max, and error if so.
-    public long getInstructions() { return instructionsExecuted; }
-    public void setInstructions(long instructions) { instructionsExecuted = instructions; }
-    public void incInstructions(long instructions) throws OutOfInstructionsException {
+    public long getInstructions() {
+        return instructionsExecuted;
+    }
+    public void setInstructions(long instructions) {
+        instructionsExecuted = instructions;
+    }
+    public void incInstructions(long instructions) throws TooManyInstructionsException {
 //        System.out.println(instructionsExecuted + " instructions executed. Incrementing by " + instructions + "...");
         // Increment, and error if we've gone too high. Also, error on overflow.
         // addExact *should* be intrinsified, probably, so this isn't a big performance hit.
@@ -45,8 +54,25 @@ public class InstanceLimiter {
         // point.
         instructionsExecuted = Math.addExact(instructionsExecuted, instructions);
         if (instructionsExecuted > maxInstructions) {
-            throw new OutOfInstructionsException(maxInstructions);
+            throw new TooManyInstructionsException(maxInstructions);
         }
+    }
+
+    // Getter and helpers for heap memory and ref counting.
+    public long getHeapMemoryUsed() {
+        return heapMemoryUsed;
+    }
+    public void incHeapMemoryUsed(long amount) throws TooMuchHeapMemoryException {
+        heapMemoryUsed = Math.addExact(heapMemoryUsed, amount);
+        if (heapMemoryUsed > maxJvmHeapMemory)
+            throw new TooMuchHeapMemoryException(maxJvmHeapMemory);
+    }
+    public void decHeapMemoryUsed(long amount) throws TooMuchHeapMemoryException {
+        heapMemoryUsed = Math.subtractExact(heapMemoryUsed, amount);
+        if (heapMemoryUsed < 0)
+            throw new IllegalStateException("Heap memory used fell below 0? Should never happen, bug in refcounting");
+        if (heapMemoryUsed > maxJvmHeapMemory)
+            throw new TooMuchHeapMemoryException(maxJvmHeapMemory);
     }
 
 }

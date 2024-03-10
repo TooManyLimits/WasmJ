@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.util;
 
+import io.github.toomanylimits.wasmj.util.funcs.ThrowingConsumer;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingFunction;
 
 import java.util.ArrayList;
@@ -31,6 +32,15 @@ public class ListUtils {
                 return i;
         }
         return -1;
+    }
+
+    public static <T, E extends Throwable> boolean any(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
+        return indexOf(list, pred) != -1;
+    }
+
+    public static <T, E extends Throwable> void iterReverse(List<T> list, ThrowingConsumer<T, E> func) throws E {
+        for (int i = list.size() - 1; i >= 0; i--)
+            func.accept(list.get(i));
     }
 
     public static <T, K, V, E extends Throwable> Map<K, V> toMap(List<T> list, ThrowingFunction<T, K, E> keyGetter, ThrowingFunction<T, V, E> valueGetter) throws E {

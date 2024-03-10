@@ -3,7 +3,7 @@ package io.github.toomanylimits.wasmj.runtime;
 import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
-import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WasmInstance {
 
-    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), true);
+    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), false);
     public final InstanceLimiter limiter;
 
     private final Set<String> wasmModuleNames = new HashSet<>();
@@ -27,8 +27,8 @@ public class WasmInstance {
 
     // The parameters to this are just used to create an InstanceLimiter for sandboxing.
     // Check InstanceLimiter for information on them.
-    public WasmInstance(long maxInstructions) {
-        limiter = new InstanceLimiter(maxInstructions);
+    public WasmInstance(long maxInstructions, long maxJvmHeapMemory) {
+        limiter = new InstanceLimiter(maxInstructions, maxJvmHeapMemory);
     }
 
     public void addWasmModule(String moduleName, WasmModule module) {

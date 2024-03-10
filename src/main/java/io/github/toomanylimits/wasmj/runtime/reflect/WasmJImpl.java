@@ -1,10 +1,11 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
-import io.github.toomanylimits.wasmj.runtime.InstanceLimiter;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.errors.WasmRuntimeException;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 
 import java.nio.charset.StandardCharsets;
 
@@ -51,7 +52,7 @@ public class WasmJImpl {
     // Counter, testing code
 
     @WasmJAllow
-    public static Object new_counter() {
+    public static Counter new_counter() {
         return new Counter();
     }
 
@@ -64,13 +65,21 @@ public class WasmJImpl {
         }
     }
 
-    static class Counter {
+    static class Counter extends RefCountable {
         int value;
         public void increment() {
             this.value += 1;
         }
         public String toString() {
             return "Counter(" + value + ")";
+        }
+
+        @Override
+        public void drop(InstanceLimiter limiter) {}
+
+        @Override
+        public long getSize() {
+            return 16;
         }
     }
 

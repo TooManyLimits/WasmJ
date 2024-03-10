@@ -1,10 +1,7 @@
 package io.github.toomanylimits.wasmj.compiler;
 
-import io.github.toomanylimits.wasmj.parsing.instruction.BlockType;
-import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
-import io.github.toomanylimits.wasmj.runtime.InstanceLimiter;
-import io.github.toomanylimits.wasmj.runtime.ModuleInstance;
 import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.parsing.module.Code;
 import io.github.toomanylimits.wasmj.parsing.module.Data;
 import io.github.toomanylimits.wasmj.parsing.module.Global;
@@ -14,6 +11,7 @@ import io.github.toomanylimits.wasmj.parsing.types.Limits;
 import io.github.toomanylimits.wasmj.parsing.types.TableType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 
@@ -44,7 +42,7 @@ public class Compile {
     public static String getMemoryVarHandleName(String typeDesc) { return "memory_handle_" + typeDesc; } // Remember: LITTLE ENDIAN!
 
     public static String getTableName(int index) { return "table_" + index; }
-    public static final String TABLE_DESCRIPTOR = "[Ljava/lang/Object;";
+    public static final String TABLE_DESCRIPTOR = Type.getDescriptor(RefCountable[].class);
 
 
     // Instantiates the given module and creates a ByteArray, which is the bytecode for a class
@@ -110,10 +108,7 @@ public class Compile {
             MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, code, visitor);
             instVisitor.visitExpr(code.expr);
             // Emit a return
-            BytecodeHelper.debugPrintln(visitor, "Returning");
-            if (funcType.results.isEmpty()) visitor.visitInsn(Opcodes.RETURN);
-            else if (funcType.results.size() == 1) BytecodeHelper.returnValue(visitor, funcType.results.get(0));
-            else throw new UnsupportedOperationException("Multi-return functions not yet supported");
+            instVisitor.visitReturn(Instruction.Return.INSTANCE);
             // The code has been generated, now finish the method.
             visitor.visitMaxs(0, 0);
             visitor.visitEnd();
@@ -194,9 +189,9 @@ public class Compile {
         for (int index = 0; index < module.tables.size(); index++) {
             TableType tableType = module.tables.get(index);
             // Create fields and get init to fill them with values
-            writer.visitField(privateStatic, getTableName(index), TABLE_DESCRIPTOR, null, null); // Create memory field
+            writer.visitField(privateStatic, getTableName(index), TABLE_DESCRIPTOR, null, null); // Create table field
             init.visitLdcInsn(256); // TODO limits.min, make table grow from element data
-            init.visitTypeInsn(Opcodes.ANEWARRAY, Type.getInternalName(Object.class));
+            init.visitTypeInsn(Opcodes.ANEWARRAY, TABLE_DESCRIPTOR.substring(2, TABLE_DESCRIPTOR.length() - 1));
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), TABLE_DESCRIPTOR);
         }
         // TODO: For each export, generate a public function to grab the Object[]
