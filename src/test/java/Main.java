@@ -13,14 +13,18 @@ import java.lang.reflect.Method;
 public class Main {
     public static void main(String[] args) throws Throwable {
 
-        InputStream inStream = Main.class.getResourceAsStream("test_counter.wasm");
+        InputStream inStream = Main.class.getResourceAsStream("test_string.wasm");
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
 
         WasmInstance instance = new WasmInstance(Long.MAX_VALUE, 100);
-        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
-        instance.addWasmModule("aaa", module);
+//        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
+        instance.addTypeModule("dog", WasmJImpl.Dog.class); // Test dog module
+        instance.addJavaModule("WasmJ", WasmJImpl.FancyPrinter.class, new WasmJImpl.FancyPrinter(" xD")); // Test global instance mode
+
+        instance.addWasmModule("aaa", module); // Compiled wasm module
+
 
         // Testing code
         Class<?> c = instance.getWasmClass("aaa");
@@ -30,11 +34,11 @@ public class Main {
         long start = System.nanoTime();
         mh.invokeExact();
         long end = System.nanoTime();
-        mh.invokeExact();
+//        mh.invokeExact();
         long end2 = System.nanoTime();
         long start3 = System.nanoTime();
-        for (int x = 0; x < 10000000; x++)
-            mh.invokeExact();
+//        for (int x = 0; x < 10000000; x++)
+//            mh.invokeExact();
         long end3 = System.nanoTime();
         System.out.println();
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");

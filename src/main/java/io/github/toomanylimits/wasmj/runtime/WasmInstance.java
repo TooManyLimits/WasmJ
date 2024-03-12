@@ -8,10 +8,8 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.lang.reflect.InvocationTargetException;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -38,14 +36,12 @@ public class WasmInstance {
         // Compile the module and add it to the custom classloader
         byte[] compiled = Compile.compileModule(javaModuleData, limiter, moduleName, module);
         loader.classes.put(Compile.getClassName(moduleName), compiled);
-        // Get the wasm class, set up the limiter, and initialize it
-        // TODO: Also set up global apis from JavaModuleData<?> instances
+        // Get the wasm class and call the init method
         try {
             Class<?> c = getWasmClass(moduleName);
-            c.getField(Compile.getLimiterName()).set(null, limiter);
-            c.getDeclaredMethod(Compile.getInitMethodName()).invoke(null);
-        } catch (Throwable e) {
-            throw new IllegalStateException("Failed to set limiter field? Should always succeed!", e);
+            c.getDeclaredMethod(Compile.getInitMethodName(), InstanceLimiter.class, Map.class).invoke(null, limiter, javaModuleData);
+        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            throw new IllegalStateException("Failed to locate/call init method? Should always succeed!", e);
         }
     }
 
@@ -62,6 +58,32 @@ public class WasmInstance {
         if (!wasmModuleNames.isEmpty())
             throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
         javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, nullableInstance));
+    }
+
+    /**
+     * Works the same as addJavaModule, in that all of these must be added
+     * before any Wasm modules are added. This works in a different way to
+     * addJavaModule(), in that there is no global instance, and instead
+     * instances are placed as the first parameter. For example:
+     * class TypeToReflect {
+     *     private int value;
+     *     @WasmJAllow
+     *     public int getValue() { return this.value(); }
+     *     @WasmJAllow
+     *     @WasmJRename("inc_value")
+     *     public void incValue() { this.value++; }
+     * }
+     * Calling addTypeModule("aaa", TypeToReflect.class) will create a JavaModule
+     * containing two methods:
+     * getValue(TypeToReflect/externref) -> i32
+     * inc_value(TypeToReflect/externref) -> void
+     */
+    public <T> void addTypeModule(String moduleName, Class<T> typeToReflect) {
+        if (javaModuleData.containsKey(moduleName))
+            throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
+        if (!wasmModuleNames.isEmpty())
+            throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
+        javaModuleData.put(moduleName, new JavaModuleData<>(typeToReflect));
     }
 
     /**

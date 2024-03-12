@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.util;
 
+import io.github.toomanylimits.wasmj.util.funcs.ThrowingBiFunction;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingConsumer;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingFunction;
 
@@ -14,6 +15,13 @@ public class ListUtils {
         ArrayList<R> result = new ArrayList<>(list.size());
         for (T elem : list)
             result.add(func.accept(elem));
+        return result;
+    }
+
+    public static <T, R, E extends Throwable> List<R> mapIndexed(List<T> list, ThrowingBiFunction<Integer, T, R, E> func) throws E {
+        ArrayList<R> result = new ArrayList<>(list.size());
+        for (int i = 0; i < list.size(); i++)
+            result.add(func.accept(i, list.get(i)));
         return result;
     }
 
@@ -47,6 +55,20 @@ public class ListUtils {
         Map<K, V> result = new HashMap<>(list.size());
         for (T elem : list)
             result.put(keyGetter.accept(elem), valueGetter.accept(elem));
+        return result;
+    }
+
+    public static <T, K, E extends Throwable> Map<K, T> associateBy(List<T> list, ThrowingFunction<T, K, E> keyGetter) throws E {
+        Map<K, T> result = new HashMap<>(list.size());
+        for (T elem : list)
+            result.put(keyGetter.accept(elem), elem);
+        return result;
+    }
+
+    public static <T, R, E extends Throwable> R fold(List<T> list, R initialValue, ThrowingBiFunction<R, T, R, E> func) throws E {
+        R result = initialValue;
+        for (T elem : list)
+            result = func.accept(result, elem);
         return result;
     }
 

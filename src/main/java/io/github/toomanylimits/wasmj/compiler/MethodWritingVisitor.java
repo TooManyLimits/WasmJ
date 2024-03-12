@@ -573,11 +573,6 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 if (funcData == null)
                     throw new IllegalStateException("Java function \"" + imported.moduleName + "." + imported.elementName + "\" does not exist (or is not allowed)");
 
-                // If the function isn't static, fetch the instance
-                if (!funcData.isStatic()) {
-                    // TODO: Fetch instance from static field
-                }
-
                 // Fetch the byte[] and/or the limiter, if the function needs them
                 if (funcData.hasByteArrayAccess()) {
                     // If the func has byte array access, put the byte array on the stack
@@ -595,8 +590,11 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 }
 
                 // Call the function
-                int invokeOpcode = funcData.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL;
-                visitor.visitMethodInsn(invokeOpcode, moduleData.className(), funcData.javaName(), funcData.descriptor(), false);
+                int invokeOpcode = funcData.needsGlue() ? Opcodes.INVOKESTATIC : (funcData.isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL);
+                String className = funcData.needsGlue() ? Compile.getClassName(moduleName) : moduleData.className();
+                String javaName = funcData.needsGlue() ? Compile.getGlueFuncName(inst.index()) : funcData.javaName();
+                String desc = funcData.needsGlue() ? funcData.glueDescriptor() : funcData.descriptor();
+                visitor.visitMethodInsn(invokeOpcode, className, javaName, desc, false);
 
                 // Store locals if necessary. See above: if a java function returns an object, we increment its ref counter.
                 // Also push result types to the stack

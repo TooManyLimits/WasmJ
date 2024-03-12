@@ -1,17 +1,15 @@
 package io.github.toomanylimits.wasmj.compiler;
 
 import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
+import io.github.toomanylimits.wasmj.parsing.module.*;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
-import io.github.toomanylimits.wasmj.parsing.module.Code;
-import io.github.toomanylimits.wasmj.parsing.module.Data;
-import io.github.toomanylimits.wasmj.parsing.module.Global;
-import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.parsing.types.FuncType;
 import io.github.toomanylimits.wasmj.parsing.types.Limits;
 import io.github.toomanylimits.wasmj.parsing.types.TableType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 
@@ -29,6 +27,8 @@ public class Compile {
     // what names to give things.
     public static String getClassName(String moduleName) { return "module/" + moduleName; }
     public static String getFuncName(int index) { return "func_" + index; }
+    public static String getGlueFuncName(int index) { return "func_" + index + "_glue"; }
+    public static String getGlobalInstanceName(String javaModuleName) { return "global_instance_" + javaModuleName; }
     public static String getGlobalName(int index) { return "global_" + index; }
 
     // Get the name of the limiter field
@@ -55,10 +55,10 @@ public class Compile {
         writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 
         emitFunctions(writer, javaModules, limiter, moduleName, module);
+        emitGlueFunctions(writer, javaModules, limiter, moduleName, module);
 
         // Create the initialization method
-        MethodVisitor init = writer.visitMethod(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, getInitMethodName(), "()V", null, null);
-        init.visitCode();
+        MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
         emitGlobals(writer, javaModules, limiter, moduleName, module, init);
         emitMemory(writer, moduleName, module, init);
         emitDatas(writer, javaModules, limiter, moduleName, module, init);
@@ -66,10 +66,6 @@ public class Compile {
         init.visitInsn(Opcodes.RETURN);
         init.visitMaxs(0, 0);
         init.visitEnd();
-
-        emitLimiterField(writer);
-
-//        implementModuleInstance(writer, moduleName, module.start == null ? null : getFuncName(module.start));
 
         writer.visitEnd();
         return ((ClassWriter) writer.getDelegate()).toByteArray();
@@ -116,6 +112,62 @@ public class Compile {
         // TODO: For each export, generate a public function that delegates to the exported one
     }
 
+    // Emit glue functions for methods in javaModules, involving specialized reference type receivers
+    private static void emitGlueFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module) {
+        // Iterate over func imports
+        for (int i = 0; i < module.funcImports().size(); i++) {
+            Import.Func funcImport = module.funcImports().get(i);
+            // If this imported func is a java function:
+            if (javaModules.containsKey(funcImport.moduleName)) {
+                JavaModuleData.MethodData funcData = javaModules.get(funcImport.moduleName).allowedMethods.get(funcImport.elementName);
+                if (funcData == null)
+                    throw new IllegalArgumentException("Failed to compile - unrecognized function \"" + funcImport.moduleName + "." + funcImport.elementName + "\"");
+                // If this imported java function needs glue, then generate glue.
+                if (funcData.needsGlue()) {
+                    funcData.writeGlue(writer, i, moduleName, funcImport.moduleName);
+                }
+            }
+        }
+    }
+
+    /**
+     * The init method accepts an InstanceLimiter as the first parameter,
+     * and a Map<String, JavaModuleData<?>> as its second parameter.
+     * The InstanceLimiter will be used to fill the visitor field, and the
+     * map will be used to fill all the global fields.
+     */
+    private static MethodVisitor beginInitMethod(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName) {
+        // Create the MethodVisitor
+        int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+        String descriptor = "(" + Type.getDescriptor(InstanceLimiter.class) + Type.getDescriptor(Map.class) + ")V";
+        MethodVisitor init = writer.visitMethod(access, getInitMethodName(), descriptor, null, null);
+
+        // Create the limiter field and fill it in
+        writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getLimiterName(), Type.getDescriptor(InstanceLimiter.class), null, null);
+        init.visitCode();
+        init.visitVarInsn(Opcodes.ALOAD, 0);
+        init.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+
+        // Create the global instance fields and fill them in
+        for (Map.Entry<String, JavaModuleData<?>> javaModule : javaModules.entrySet()) {
+            // Skip any without a global instance
+            if (javaModule.getValue().globalInstance == null) continue;
+            // For the rest, create a field and fill it in
+            String fieldDesc = Type.getDescriptor(javaModule.getValue().moduleClass);
+            writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getGlobalInstanceName(javaModule.getKey()), fieldDesc, null, null);
+            init.visitVarInsn(Opcodes.ALOAD, 1); // [Map]
+            init.visitLdcInsn(javaModule.getKey()); // [Map, javaModuleName]
+            init.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.getInternalName(Map.class), "get", "(Ljava/lang/Object;)Ljava/lang/Object;", true); // [javaModuleData]
+            init.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(JavaModuleData.class)); // [javaModuleData]
+            init.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(JavaModuleData.class), "globalInstance", "Ljava/lang/Object;"); // [javaModuleData.globalInstance]
+            init.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(javaModule.getValue().moduleClass)); // [(InstanceType) javaModuleData.globalInstance]
+            init.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getGlobalInstanceName(javaModule.getKey()), fieldDesc); // [], value was stored in field
+        }
+
+        // Return the method visitor
+        return init;
+    }
+
     private static void emitGlobals(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
         // Create the various globals, and initialize them in init.
         String className = getClassName(moduleName);
@@ -125,7 +177,7 @@ public class Compile {
             // Create field:
             writer.visitField(access, getGlobalName(index), global.globalType().valType().desc(), null, null);
             // Initialize:
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(), global.initializer()), init);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref), global.initializer()), init);
             instVisitor.visitExpr(global.initializer());
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().desc());
         }
@@ -168,7 +220,7 @@ public class Compile {
             // TODO: Make this use a more efficient system for initializing bytes, this one is complete garbage lol
             if (data.mode instanceof Data.Mode.Active activeMode) {
                 init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(activeMode.memIndex()), "[B");
-                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(), activeMode.offset()), init);
+                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref), activeMode.offset()), init);
                 instVisitor.visitExpr(activeMode.offset());
                 for (byte b : data.init) {
                     // [arr, index]
@@ -195,44 +247,6 @@ public class Compile {
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), TABLE_DESCRIPTOR);
         }
         // TODO: For each export, generate a public function to grab the Object[]
-    }
-
-    // Create the limiter field, which is present on all the generated wasm module classes
-    private static void emitLimiterField(ClassVisitor writer) {
-        int flags = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
-        String descriptor = Type.getDescriptor(InstanceLimiter.class);
-        writer.visitField(flags, getLimiterName(), descriptor, null, null);
-    }
-
-    private static void implementModuleInstance(ClassVisitor writer, String moduleName, String startFuncName) {
-        // No real need for any of this
-//        // Default constructor
-//        MethodVisitor constructor = writer.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
-//        constructor.visitCode();
-//        constructor.visitVarInsn(Opcodes.ALOAD, 0);
-//        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(Object.class), "<init>", "()V", false);
-//        constructor.visitInsn(Opcodes.RETURN);
-//        constructor.visitMaxs(0, 0);
-//        constructor.visitEnd();
-//
-//        // name() method: Returns the name that the module was instantiated with
-//        MethodVisitor nameMethod = writer.visitMethod(Opcodes.ACC_PUBLIC, "name", "()" + Type.getDescriptor(String.class), null, null);
-//        nameMethod.visitCode();
-//        nameMethod.visitLdcInsn(moduleName);
-//        nameMethod.visitInsn(Opcodes.ARETURN);
-//        nameMethod.visitMaxs(0, 0);
-//        nameMethod.visitEnd();
-//
-//        // start() method: Run the start method, if one exists
-//        // Start method is assumed to have descriptor ()V
-//        MethodVisitor startMethod = writer.visitMethod(Opcodes.ACC_PUBLIC, "start", "()V", null, null);
-//        startMethod.visitCode();
-//        if (startFuncName != null) {
-//            startMethod.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(moduleName), startFuncName, "()V", false);
-//        }
-//        startMethod.visitInsn(Opcodes.RETURN);
-//        startMethod.visitMaxs(0, 0);
-//        startMethod.visitEnd();
     }
 
 }

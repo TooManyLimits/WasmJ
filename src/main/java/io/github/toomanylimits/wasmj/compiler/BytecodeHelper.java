@@ -19,11 +19,12 @@ public class BytecodeHelper {
     }
     // Get the type name of the given class for ASM
     public static ValType wasmType(Class<?> clazz) {
+        if (clazz == void.class) return null;
         if (clazz == int.class) return ValType.i32;
         if (clazz == long.class) return ValType.i64;
         if (clazz == float.class) return ValType.f32;
         if (clazz == double.class) return ValType.f64;
-        if (clazz == Object.class) return ValType.externref;
+        if (Object.class.isAssignableFrom(clazz)) return ValType.externref;
         throw new IllegalArgumentException("Type " + clazz + " has no corresponding WASM type");
     }
     // Emit bytecode that throws a WasmJ runtime error with the given constant message
@@ -32,6 +33,15 @@ public class BytecodeHelper {
         visitor.visitTypeInsn(Opcodes.NEW, errorName);
         visitor.visitInsn(Opcodes.DUP);
         visitor.visitLdcInsn(message);
+        visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, errorName, "<init>", "(Ljava/lang/String;)V", false);
+        visitor.visitInsn(Opcodes.ATHROW);
+    }
+    // Throw a runtime error with the String message on top of the stack
+    public static void throwRuntimeError(MethodVisitor visitor) {
+        String errorName = Type.getInternalName(WasmRuntimeException.class);
+        visitor.visitTypeInsn(Opcodes.NEW, errorName);
+        visitor.visitInsn(Opcodes.DUP_X1);
+        visitor.visitInsn(Opcodes.SWAP);
         visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, errorName, "<init>", "(Ljava/lang/String;)V", false);
         visitor.visitInsn(Opcodes.ATHROW);
     }
@@ -117,7 +127,8 @@ public class BytecodeHelper {
     }
     // Emit bytecode that stores a local of the given type at the given index
     public static void returnValue(MethodVisitor visitor, ValType type) {
-        if (type == ValType.i32) visitor.visitInsn(Opcodes.IRETURN);
+        if (type == null) visitor.visitInsn(Opcodes.RETURN); // null = void
+        else if (type == ValType.i32) visitor.visitInsn(Opcodes.IRETURN);
         else if (type == ValType.i64) visitor.visitInsn(Opcodes.LRETURN);
         else if (type == ValType.f32) visitor.visitInsn(Opcodes.FRETURN);
         else if (type == ValType.f64) visitor.visitInsn(Opcodes.DRETURN);

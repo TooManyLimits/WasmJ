@@ -57,15 +57,11 @@ public class WasmJImpl {
     }
 
     @WasmJAllow
-    public static void inc_counter(Object obj) {
-        if (obj instanceof Counter counter) {
-            counter.increment();
-        } else {
-            throw new IllegalArgumentException(">:(");
-        }
+    public static void inc_counter(Counter counter) {
+        counter.increment();
     }
 
-    static class Counter extends RefCountable {
+    public static class Counter extends RefCountable {
         int value;
         public void increment() {
             this.value += 1;
@@ -82,5 +78,41 @@ public class WasmJImpl {
             return 16;
         }
     }
+
+    public static class Dog extends RefCountable {
+
+        @WasmJAllow
+        public static Dog new_dog() {
+            return new Dog();
+        }
+
+        @WasmJAllow
+        @LimiterAccess
+        public void bark(int numTimes, InstanceLimiter limiter) {
+            limiter.incInstructions(numTimes * 10L);
+            for (int i = 0; i < numTimes; i++) {
+                System.out.println("woof");
+            }
+        }
+
+        @Override
+        protected void drop(InstanceLimiter limiter) {}
+
+        @Override
+        protected long getSize() {
+            return 16;
+        }
+    }
+
+    public record FancyPrinter(String suffix) {
+        @WasmJAllow
+        @ByteArrayAccess
+        public void print_str(int ptr, int len, byte[] mem) {
+            String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
+            System.out.println(s + suffix);
+        }
+    }
+
+
 
 }
