@@ -45,6 +45,13 @@ public class BytecodeHelper {
         visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, errorName, "<init>", "(Ljava/lang/String;)V", false);
         visitor.visitInsn(Opcodes.ATHROW);
     }
+    public static void createDefaultObject(MethodVisitor visitor, Class<?> clazz) {
+        String typeName = Type.getInternalName(clazz);
+        visitor.visitTypeInsn(Opcodes.NEW, typeName); // [obj]
+        visitor.visitInsn(Opcodes.DUP); // [obj, obj]
+        visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, typeName, "<init>", "()V", false); // [initialized obj]
+    }
+
     // Push a constant value on the stack
     public static void constInt(MethodVisitor visitor, int value) {
         if (value >= -1 && value <= 5) visitor.visitInsn(Opcodes.ICONST_0 + value);
@@ -63,6 +70,14 @@ public class BytecodeHelper {
     public static void constDouble(MethodVisitor visitor, double value) {
         if (value == 0.0 || value == 1.0) visitor.visitInsn(Opcodes.DCONST_0 + (int) value);
         else visitor.visitLdcInsn(value);
+    }
+    public static void boxValue(MethodVisitor visitor, ValType type) {
+        if (type == ValType.i32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+        else if (type == ValType.i64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
+        else if (type == ValType.f32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
+        else if (type == ValType.f64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
+        else if (type == ValType.funcref || type == ValType.externref) { /* Do nothing */ }
+        else throw new UnsupportedOperationException("Cannot box value of given type - only int, long, float, double, reftype");
     }
     // Give a jumping opcode to test the top of the stack.
     // If the opcode succeeds (a jump occurs), 1 is pushed.

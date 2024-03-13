@@ -1,3 +1,4 @@
+import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.runtime.WasmInstance;
 import io.github.toomanylimits.wasmj.parsing.module.Export;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
@@ -8,6 +9,8 @@ import java.io.InputStream;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
 
 
 public class Main {
@@ -25,14 +28,12 @@ public class Main {
 
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
-
         // Testing code
         Class<?> c = instance.getWasmClass("aaa");
-        Method m = c.getDeclaredMethod("func_" + (ListUtils.filter(module.exports, it -> it.type() == Export.ExportType.FUNC).get(0).index() - module.funcImports().size()));
-        m.trySetAccessible();
+        Method m = ListUtils.first(Arrays.asList(c.getDeclaredMethods()), me -> me.getName().equals(Compile.getExportFuncName("test_string")));
         MethodHandle mh = MethodHandles.lookup().unreflect(m);
         long start = System.nanoTime();
-        mh.invokeExact();
+        mh.invoke();
         long end = System.nanoTime();
 //        mh.invokeExact();
         long end2 = System.nanoTime();

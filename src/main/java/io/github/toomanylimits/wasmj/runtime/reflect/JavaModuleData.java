@@ -121,9 +121,9 @@ public class JavaModuleData<T> {
             return "(" + ListUtils.fold(ListUtils.map(getGlueParams(), MethodData::gluedTypeDescriptor), "", String::concat) + ")" + Type.getDescriptor(method.getReturnType());
         }
 
-        public void writeGlue(ClassVisitor writer, int funcIndex, String callerModuleName, String javaModuleName) {
+        public void writeGlue(ClassVisitor writer, String functionName, String callerModuleName, String javaModuleName) {
             int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
-            MethodVisitor visitor = writer.visitMethod(access, Compile.getGlueFuncName(funcIndex), glueDescriptor(), null, null);
+            MethodVisitor visitor = writer.visitMethod(access, functionName, glueDescriptor(), null, null);
 
             visitor.visitCode();
             if (globalInstanceMode && !isStatic()) {

@@ -45,6 +45,11 @@ public class ListUtils {
     public static <T, E extends Throwable> boolean any(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
         return indexOf(list, pred) != -1;
     }
+    public static <T, E extends Throwable> T first(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
+        int index = indexOf(list, pred);
+        if (index == -1) return null;
+        return list.get(index);
+    }
 
     public static <T, E extends Throwable> void iterReverse(List<T> list, ThrowingConsumer<T, E> func) throws E {
         for (int i = list.size() - 1; i >= 0; i--)

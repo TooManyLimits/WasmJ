@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.compiler;
 
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
 import io.github.toomanylimits.wasmj.parsing.instruction.Instruction;
 import io.github.toomanylimits.wasmj.parsing.module.*;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
@@ -30,6 +31,7 @@ public class Compile {
     public static String getGlueFuncName(int index) { return "func_" + index + "_glue"; }
     public static String getGlobalInstanceName(String javaModuleName) { return "global_instance_" + javaModuleName; }
     public static String getGlobalName(int index) { return "global_" + index; }
+    public static String getExportFuncName(String exportName) { return "export_func_" + exportName; }
 
     // Get the name of the limiter field
     public static String getLimiterName() { return "limiter"; }
@@ -55,7 +57,8 @@ public class Compile {
         writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 
         emitFunctions(writer, javaModules, limiter, moduleName, module);
-        emitGlueFunctions(writer, javaModules, limiter, moduleName, module);
+        emitGlueFunctions(writer, javaModules, moduleName, module);
+        emitExportedFunctions(writer, javaModules, limiter, moduleName, module);
 
         // Create the initialization method
         MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
@@ -83,7 +86,7 @@ public class Compile {
                 throw new UnsupportedOperationException("Multi-return functions not yet supported");
             // Get data about the function, check if exported to figure out the name
             int access = Opcodes.ACC_STATIC + Opcodes.ACC_PRIVATE;
-            String funcName = getFuncName(index);
+            String funcName = getFuncName(index + module.funcImports().size());
             // Generate the code
             Code code = module.codes.get(index);
             MethodVisitor visitor = writer.visitMethod(access, funcName, descriptor, null, null);
@@ -109,11 +112,10 @@ public class Compile {
             visitor.visitMaxs(0, 0);
             visitor.visitEnd();
         }
-        // TODO: For each export, generate a public function that delegates to the exported one
     }
 
     // Emit glue functions for methods in javaModules, involving specialized reference type receivers
-    private static void emitGlueFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module) {
+    private static void emitGlueFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
         // Iterate over func imports
         for (int i = 0; i < module.funcImports().size(); i++) {
             Import.Func funcImport = module.funcImports().get(i);
@@ -124,9 +126,58 @@ public class Compile {
                     throw new IllegalArgumentException("Failed to compile - unrecognized function \"" + funcImport.moduleName + "." + funcImport.elementName + "\"");
                 // If this imported java function needs glue, then generate glue.
                 if (funcData.needsGlue()) {
-                    funcData.writeGlue(writer, i, moduleName, funcImport.moduleName);
+                    funcData.writeGlue(writer, Compile.getGlueFuncName(i), moduleName, funcImport.moduleName);
                 }
             }
+        }
+    }
+
+    private static void emitExportedFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module) {
+        for (Export export : module.exports) {
+            if (export.type() != Export.ExportType.FUNC) continue;
+
+            FuncType funcType;
+            if (export.index() < module.funcImports().size()) {
+                // It's an import
+                Import.Func funcImport = module.funcImports().get(export.index());
+                if (javaModules.containsKey(funcImport.moduleName)) {
+                    // It's a java function
+                    JavaModuleData.MethodData funcData = javaModules.get(funcImport.moduleName).allowedMethods.get(funcImport.elementName);
+                    if (funcData == null)
+                        throw new IllegalArgumentException("Failed to compile - unrecognized function \"" + funcImport.moduleName + "." + funcImport.elementName + "\"");
+                    // Generate glue function, using exported name
+                    funcData.writeGlue(writer, getExportFuncName(export.name()), moduleName, funcImport.moduleName);
+                    // We wrote the glue, continue
+                    continue;
+                }
+                // It's an imported WASM function:
+                funcType = module.types.get(funcImport.typeIndex);
+            } else {
+                // Local WASM function:
+                funcType = module.types.get(module.functions.get(export.index() - module.funcImports().size()));
+            }
+            // It's a WASM function. Emit a function to call it.
+
+            int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+            String methodName = getExportFuncName(export.name());
+            StringBuilder descriptor = new StringBuilder("(");
+            for (ValType paramType: funcType.args)
+                descriptor.append(paramType.desc());
+            descriptor.append(")Ljava/util/List;"); // Returns a list
+            MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor.toString(), null, null);
+            methodVisitor.visitCode();
+            Code tempCode = new Code(-1, -1, funcType.args, new Expression(List.of()));
+            MethodWritingVisitor visitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, tempCode, methodVisitor);
+
+            // Get the visitor to load all the locals, do the call, then return.
+            for (int i = 0; i < funcType.args.size(); i++)
+                visitor.visitLocalGet(new Instruction.LocalGet(i)); // Load all locals
+            visitor.visitCall(new Instruction.Call(export.index())); // Call the function
+            visitor.returnAsList(funcType.results); // Return results as list
+
+            // End the methodVisitor
+            methodVisitor.visitMaxs(0, 0);
+            methodVisitor.visitEnd();
         }
     }
 

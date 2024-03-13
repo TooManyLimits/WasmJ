@@ -235,6 +235,67 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitLabel(end);
     }
 
+    /**
+     * Return the elements of the given type, in a List data structure.
+     * Used for export helper functions.
+     * Largely the same logic as the "visitReturn" method.
+     * This is used when we return to a JAVA CALLER!
+     * So refcounts of returned values should be decremented!
+     */
+    public void returnAsList(List<ValType> returnTypes) {
+        // Create an arraylist to return with and store it in the next local
+        BytecodeHelper.createDefaultObject(visitor, ArrayList.class);
+        visitor.visitVarInsn(Opcodes.ASTORE, code.nextLocalSlot()); // Store
+
+        // For each type in return types... (reversed)
+        // Pop off the first elements of the stack that are getting returned.
+        // Their refcounts shouldn't be modified.
+        ListUtils.iterReverse(returnTypes, t -> {
+            // Pop it from the abstract stack:
+            abstractStack.popExpecting(t);
+            // If we count memory, decrement its refcount:
+            if (limiter.countsMemory && t instanceof ValType.RefType) {
+                visitor.visitInsn(Opcodes.DUP);
+                decrementRefCountOfTopElement();
+            }
+            // Box it:
+            BytecodeHelper.boxValue(visitor, t);
+            // Append it to the list:
+            visitor.visitVarInsn(Opcodes.ALOAD, code.nextLocalSlot()); // [value, list]
+            visitor.visitInsn(Opcodes.SWAP); // [list, value]
+            visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/util/ArrayList", "add", "(Ljava/lang/Object;)Z", false); // [true]
+            visitor.visitInsn(Opcodes.POP); // []
+        });
+
+        // Iterate over remaining elements of stack, find objects and decrement their refcounts.
+        if (limiter.countsMemory) { // If we count memory at all, that is
+            for (var e: abstractStack) {
+                if (e instanceof AbstractStackElement.ValueElement v && v.valueType instanceof ValType.RefType) {
+                    if (v.localVariableIndex == -1)
+                        throw new IllegalStateException("Value is ref type but doesnt have local variable index??");
+                    BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
+                    BytecodeHelper.debugPrintln(visitor, "DecRefCount - return, removing from stack");
+                    decrementRefCountOfTopElement();
+                }
+            }
+            // Also iterate over the original local variables and decrement theirs
+            for (int i = 0; i < code.locals.size(); i++) {
+                ValType localType = code.locals.get(i);
+                if (localType instanceof ValType.RefType) {
+                    int mappedIndex = code.localMappings().get(i);
+                    BytecodeHelper.loadLocal(visitor, mappedIndex, localType);
+                    BytecodeHelper.debugPrintln(visitor, "DecRefCount - return, removing local vars");
+                    decrementRefCountOfTopElement();
+                }
+            }
+        }
+
+        // Reverse the list and return it
+        visitor.visitVarInsn(Opcodes.ALOAD, code.nextLocalSlot());
+        visitor.visitInsn(Opcodes.DUP);
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Collections.class), "reverse", "(Ljava/util/List;)V", false);
+        visitor.visitInsn(Opcodes.ARETURN);
+    }
 
     @Override public Void visitEnd(Instruction.End inst) {
         throw new UnsupportedOperationException("Not yet implemented");
@@ -496,11 +557,14 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitReturn(Instruction.Return inst) {
 //        BytecodeHelper.debugPrintln(visitor, "Returning");
+
+        // Pop off the first elements of the stack that are getting returned.
+        // Their refcounts shouldn't be modified.
         FuncType functionType = module.types.get(module.functions.get(code.index));
         for (int i = functionType.results.size() - 1; i >= 0; i--)
             abstractStack.popExpecting(functionType.results.get(i));
 
-        // Iterate over remaining elements of stack, find objects and decrement their refcounts
+        // Iterate over remaining elements of stack, find objects and decrement their refcounts.
         if (limiter.countsMemory) { // If we count memory at all, that is
             for (var e: abstractStack) {
                 if (e instanceof AbstractStackElement.ValueElement v && v.valueType instanceof ValType.RefType) {
@@ -540,21 +604,6 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Apply the stack type
             FuncType funcType = module.types.get(imported.typeIndex);
             if (funcType.results.size() > 1) throw new UnsupportedOperationException("Multi-return functions");
-            // If the function has any reference types as parameters:
-            if (limiter.countsMemory) {
-                // Find the objects, decrement their ref counts
-                ListUtils.iterReverse(funcType.asStackType().inTypes(), t -> {
-                    AbstractStackElement.ValueElement v = abstractStack.popExpecting(t);
-                    if (v.localVariableIndex != -1) {
-                        BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
-                        BytecodeHelper.debugPrintln(visitor, "DecRefCount - before imported call");
-                        decrementRefCountOfTopElement();
-                    }
-                });
-            } else {
-                // Otherwise, can just apply stack type normally, no worries
-                abstractStack.applyStackType(funcType.asStackType());
-            }
 
             // Do something different depending on if this is a java function or a WASM function
             // Important note for refcounting:
@@ -567,6 +616,27 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // the refcounter itself, when obtaining this Object from a java function.
 
             if (javaModules.containsKey(imported.moduleName)) {
+
+                // If the function has any reference types as parameters, decrement ref counts.
+                // We're calling OUT OF WASM here. When we call another WASM function, we keep
+                // ref counts of params the same, since the new stack frame just takes those
+                // references. But here, the java code takes the references, so WASM doesn't have
+                // access to them anymore, so we decrement.
+                if (limiter.countsMemory) {
+                    // Find the objects, decrement their ref counts
+                    ListUtils.iterReverse(funcType.asStackType().inTypes(), t -> {
+                        AbstractStackElement.ValueElement v = abstractStack.popExpecting(t);
+                        if (v.localVariableIndex != -1) {
+                            BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
+                            BytecodeHelper.debugPrintln(visitor, "DecRefCount - before imported call");
+                            decrementRefCountOfTopElement();
+                        }
+                    });
+                } else {
+                    // Otherwise, can just apply stack type normally, no worries
+                    abstractStack.applyStackType(funcType.asStackType());
+                }
+
                 // Java function, need some thought put into it
                 JavaModuleData<?> moduleData = javaModules.get(imported.moduleName);
                 JavaModuleData.MethodData funcData = moduleData.allowedMethods.get(imported.elementName);
@@ -617,6 +687,8 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                     }
                 }
             } else {
+                // Apply type to abstract stack.
+                abstractStack.applyStackType(funcType.asStackType());
                 // Wasm function is called, simply invokestatic.
                 visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(imported.moduleName), imported.elementName, funcType.descriptor(), false);
                 // If a wasm function returns an Object, we don't update the refcounter, but we still update the local variable.
@@ -638,24 +710,13 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             FuncType funcType = module.types.get(module.functions.get(adjustedIndex));
             if (funcType.results.size() > 1) throw new UnsupportedOperationException("Multi-return functions");
 
+            // We're calling a WASM function, so the refcount of the params doesn't change.
+            // They will lose 1 reference in this function, but gain 1 in the new function frame.
             // If the function has any reference types as parameters:
-            if (limiter.countsMemory) {
-                // Find the objects, decrement their ref counts
-                ListUtils.iterReverse(funcType.asStackType().inTypes(), t -> {
-                    AbstractStackElement.ValueElement v = abstractStack.popExpecting(t);
-                    if (v.localVariableIndex != -1) {
-                        BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
-                        BytecodeHelper.debugPrintln(visitor, "DecRefCount - before local call");
-                        decrementRefCountOfTopElement();
-                    }
-                });
-            } else {
-                // Otherwise, can just apply stack type normally, no worries
-                abstractStack.applyStackType(funcType.asStackType());
-            }
+            abstractStack.applyStackType(funcType.asStackType());
 
             // Invoke static
-            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(moduleName), Compile.getFuncName(adjustedIndex), funcType.descriptor(), false);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(moduleName), Compile.getFuncName(inst.index()), funcType.descriptor(), false);
 
             if (limiter.countsMemory) {
                 // TODO: Multiple returns
