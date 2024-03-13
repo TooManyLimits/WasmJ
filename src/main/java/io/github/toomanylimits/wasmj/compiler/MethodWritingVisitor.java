@@ -1870,7 +1870,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     @Override public Void visitI32TruncF32U(Instruction.I32TruncF32U inst) {
         abstractStack.applyStackType(inst.stackType());
         visitor.visitInsn(Opcodes.F2L);
-        visitor.visitInsn(Opcodes.F2I);
+        visitor.visitInsn(Opcodes.L2I);
         return null;
     }
     @Override public Void visitI32TruncF64S(Instruction.I32TruncF64S inst) {
@@ -1882,7 +1882,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         abstractStack.applyStackType(inst.stackType());
         //TODO: Might not be correct? Unsure
         visitor.visitInsn(Opcodes.D2L);
-        visitor.visitInsn(Opcodes.D2I);
+        visitor.visitInsn(Opcodes.L2I);
         return null;
     }
 
