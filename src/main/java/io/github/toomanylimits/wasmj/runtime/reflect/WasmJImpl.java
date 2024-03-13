@@ -1,7 +1,9 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
+import io.github.toomanylimits.wasmj.runtime.errors.TooManyInstructionsException;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
-import io.github.toomanylimits.wasmj.runtime.errors.WasmRuntimeException;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmCodeException;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
@@ -40,8 +42,8 @@ public class WasmJImpl {
     }
 
     @WasmJAllow
-    public static void err() throws WasmRuntimeException {
-        throw new WasmRuntimeException("Program errored!");
+    public static void err() throws WasmCodeException {
+        throw new WasmCodeException("Program errored!");
     }
 
     @WasmJAllow
@@ -88,7 +90,7 @@ public class WasmJImpl {
 
         @WasmJAllow
         @LimiterAccess
-        public void bark(int numTimes, InstanceLimiter limiter) {
+        public void bark(int numTimes, InstanceLimiter limiter) throws WasmException {
             limiter.incInstructions(numTimes * 10L);
             for (int i = 0; i < numTimes; i++) {
                 System.out.println("woof");
@@ -109,7 +111,7 @@ public class WasmJImpl {
         @ByteArrayAccess
         public void print_str(int ptr, int len, byte[] mem) {
             String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
-            System.out.println(s + suffix);
+//            System.out.println(s + suffix); // Comment print for perf
         }
     }
 

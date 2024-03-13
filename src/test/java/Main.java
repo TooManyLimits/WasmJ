@@ -2,6 +2,7 @@ import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.runtime.WasmInstance;
 import io.github.toomanylimits.wasmj.parsing.module.Export;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.runtime.WasmJCallable;
 import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 
@@ -29,17 +30,15 @@ public class Main {
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
         // Testing code
-        Class<?> c = instance.getWasmClass("aaa");
-        Method m = ListUtils.first(Arrays.asList(c.getDeclaredMethods()), me -> me.getName().equals(Compile.getExportFuncName("test_string")));
-        MethodHandle mh = MethodHandles.lookup().unreflect(m);
+        WasmJCallable function = instance.getExportedFunction("aaa", "test_string");
         long start = System.nanoTime();
-        mh.invoke();
+        function.call();
         long end = System.nanoTime();
-//        mh.invokeExact();
+        function.call();
         long end2 = System.nanoTime();
         long start3 = System.nanoTime();
-//        for (int x = 0; x < 10000000; x++)
-//            mh.invokeExact();
+        for (int x = 0; x < 10000000; x++)
+            function.call();
         long end3 = System.nanoTime();
         System.out.println();
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");

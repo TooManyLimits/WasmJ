@@ -4,11 +4,15 @@ import io.github.toomanylimits.wasmj.compiler.Compile;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -97,6 +101,19 @@ public class WasmInstance {
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("The class \"" + wasmModuleName + "\" was added to the instance, but could not be found in the class loader? Internal bug!", e);
         }
+    }
+
+    /**
+     * Gets the exported function in the given module with the given name.
+     * If there is no such function, returns null.
+     */
+    public WasmJCallable getExportedFunction(String wasmModuleName, String exportName) {
+        Class<?> wasmClass = getWasmClass(wasmModuleName);
+        if (wasmClass == null) return null;
+        String desiredName = Compile.getExportFuncName(exportName);
+        Method m = ListUtils.first(Arrays.asList(wasmClass.getDeclaredMethods()), me -> me.getName().equals(desiredName));
+        if (m == null) return null;
+        return args -> (List<Object>) m.invoke(null, args);
     }
 
     /**
