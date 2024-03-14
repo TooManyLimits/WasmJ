@@ -1,5 +1,7 @@
 package io.github.toomanylimits.wasmj.runtime.sandbox;
 
+import io.github.toomanylimits.wasmj.runtime.errors.TooMuchHeapMemoryException;
+
 /**
  * Extend this for a type that should be WASM-capable
  */
@@ -11,7 +13,7 @@ public abstract class RefCountable {
     private int references;
 
     // Increase the number of references to this by 1
-    public void inc(InstanceLimiter limiter) {
+    public void inc(InstanceLimiter limiter) throws TooMuchHeapMemoryException {
         references++;
         if (references == 1)
             limiter.incHeapMemoryUsed(getSize());

@@ -9,8 +9,6 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
@@ -21,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class WasmInstance {
 
-    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), ClassLoader.getSystemClassLoader(), true);
+    private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), WasmInstance.class.getClassLoader(), false);
     public final InstanceLimiter limiter;
 
     private final Set<String> wasmModuleNames = new HashSet<>();

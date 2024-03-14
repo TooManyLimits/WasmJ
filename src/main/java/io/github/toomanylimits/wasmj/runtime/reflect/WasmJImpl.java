@@ -26,7 +26,7 @@ public class WasmJImpl {
     @LimiterAccess
     public static void print_str(int ptr, int len, byte[] mem, InstanceLimiter limiter) {
         String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
-//        System.out.println(s);
+        System.out.println(s);
     }
 
     @WasmJAllow
@@ -48,7 +48,7 @@ public class WasmJImpl {
 
     @WasmJAllow
     public static void print_obj(Object o) {
-//        System.out.println(o); // Extremely slow, comment it out for any performance testing
+        System.out.println(o);
     }
 
     // Counter, testing code
@@ -111,7 +111,7 @@ public class WasmJImpl {
         @ByteArrayAccess
         public void print_str(int ptr, int len, byte[] mem) {
             String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
-//            System.out.println(s + suffix); // Comment print for perf
+            System.out.println(s + suffix); // Comment print for perf
         }
     }
 

@@ -34,11 +34,11 @@ public class Main {
         long start = System.nanoTime();
         function.call();
         long end = System.nanoTime();
-        function.call();
+//        function.call();
         long end2 = System.nanoTime();
         long start3 = System.nanoTime();
-        for (int x = 0; x < 10000000; x++)
-            function.call();
+//        for (int x = 0; x < 10000000; x++)
+//            function.call();
         long end3 = System.nanoTime();
         System.out.println();
         System.out.println("Execution took " + (end - start) / 1_000_000.0 + " ms");

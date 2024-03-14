@@ -1,0 +1,12 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="WasmJ.main:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/WasmJ_main_jar</output-path>
+    <root id="archive" name="WasmJ.main.jar">
+      <element id="module-output" name="WasmJ.main" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/ow2/asm/asm-util/9.4/asm-util-9.4.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/ow2/asm/asm-tree/9.4/asm-tree-9.4.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/ow2/asm/asm/9.6/asm-9.6.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/org/ow2/asm/asm-analysis/9.4/asm-analysis-9.4.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>

@@ -67,12 +67,10 @@ public class InstanceLimiter {
         if (heapMemoryUsed > maxJvmHeapMemory)
             throw new TooMuchHeapMemoryException(maxJvmHeapMemory);
     }
-    public void decHeapMemoryUsed(long amount) throws TooMuchHeapMemoryException {
+    public void decHeapMemoryUsed(long amount) {
         heapMemoryUsed = Math.subtractExact(heapMemoryUsed, amount);
         if (heapMemoryUsed < 0)
             throw new IllegalStateException("Heap memory used fell below 0? Should never happen, bug in refcounting");
-        if (heapMemoryUsed > maxJvmHeapMemory)
-            throw new TooMuchHeapMemoryException(maxJvmHeapMemory);
     }
 
 }
