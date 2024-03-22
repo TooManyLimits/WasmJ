@@ -195,6 +195,18 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incInstructions", "(J)V", false);
     }
 
+    // Increments memory usage, using the long value on top of the stack as the count. Consumes the long.
+    // Assumes that the limiter counts memory.
+    private void incrementMemoryByTopElement() {
+        if (!limiter.countsMemory)
+            throw new IllegalStateException("Method incrementMemoryByTopElement should only be called if limiter.countsMemory is true!");
+        // Get limiter, swap, call inc
+        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+        visitor.visitInsn(Opcodes.DUP_X2);
+        visitor.visitInsn(Opcodes.POP);
+        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false);
+    }
+
     // Decrements/increments the ref count of the top element.
     // Consumes the element, so dup it first if you still want it.
     // Assumes that the limiter counts heap memory.
@@ -1016,6 +1028,15 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         abstractStack.popExpecting(ValType.funcref, ValType.externref);
         abstractStack.push(new AbstractStackElement.ValueElement(ValType.i32, -1));
 
+        // [fillValue, requestedEntries]
+
+        // If requested entries are negative, error
+        visitor.visitInsn(Opcodes.DUP);
+        Label okay = new Label();
+        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call table.grow with value above i32_max. WasmJ doesn't support this!");
+        visitor.visitLabel(okay);
+
         // If counting instructions, then increment instruction counter by
         // currentSize + requestedEntries. This is to pay for the arraycopy + fill.
         if (limiter.countsInstructions) {
@@ -1026,6 +1047,15 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             visitor.visitInsn(Opcodes.IADD); // [fillValue, requestedEntries, requestedEntries + table.length]
             visitor.visitInsn(Opcodes.I2L); // [fillValue, requestedEntries, (long) (requestedEntries + table.length)]
             incrementInstructionsByTopElement(); // [fillValue, requestedEntries]
+        }
+        // If counting memory, increment memory usage by requestedEntries * 8.
+        if (limiter.countsMemory) {
+            // [fillValue, requestedEntries]
+            visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, requestedEntries]
+            visitor.visitInsn(Opcodes.I2L); // [fillValue, requestedEntries, (long) requestedEntries]
+            BytecodeHelper.constLong(visitor, 8L); // [fillValue, requestedEntries, (long) requestedEntries, 8L]
+            visitor.visitInsn(Opcodes.LMUL); // fillValue, requestedEntries, (long) requestedEntries * 8]
+            incrementMemoryByTopElement();
         }
 
         // Stack = [fillValue, requestedEntries]
@@ -1285,6 +1315,14 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     @Override public Void visitMemoryGrow(Instruction.MemoryGrow inst) {
         BytecodeHelper.debugPrintln(visitor, "memory.grow was called");
         abstractStack.applyStackType(inst.stackType());
+        // Stack = [requestedPages]
+
+        // If requested pages are negative, error
+        visitor.visitInsn(Opcodes.DUP);
+        Label okay = new Label();
+        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call memory.grow with value above i32_max. WasmJ doesn't support this!");
+        visitor.visitLabel(okay);
 
         // If counting instructions, then increment instruction counter by
         // currentSize.length / 8 (arbitrary). This is to pay for the arraycopy.
@@ -1295,6 +1333,14 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             BytecodeHelper.constLong(visitor, 8L);
             visitor.visitInsn(Opcodes.LDIV);
             incrementInstructionsByTopElement();
+        }
+        // If counting memory, increment memory counter by the requested pages * PAGE_SIZE.
+        if (limiter.countsMemory) {
+            visitor.visitInsn(Opcodes.DUP); // [requestedPages, requestedPages]
+            visitor.visitInsn(Opcodes.I2L); // [requestedPages, (long) requestedPages]
+            BytecodeHelper.constLong(visitor, Compile.WASM_PAGE_SIZE); // [requestedPages, (long) requestedPages, (long) PAGE_SIZE]
+            visitor.visitInsn(Opcodes.LMUL); // [requestedPages, (long) requestedPages * (long) PAGE_SIZE]
+            incrementMemoryByTopElement(); // [requestedPages]
         }
 
         // Stack = [requestedPages]
