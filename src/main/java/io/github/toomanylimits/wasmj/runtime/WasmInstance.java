@@ -27,6 +27,7 @@ public class WasmInstance {
 
     // The parameters to this are just used to create an InstanceLimiter for sandboxing.
     // Check InstanceLimiter for information on them.
+    // Use -1 if you don't want to track the variable at all.
     public WasmInstance(long maxInstructions, long maxJvmHeapMemory) {
         limiter = new InstanceLimiter(maxInstructions, maxJvmHeapMemory);
     }
@@ -41,7 +42,7 @@ public class WasmInstance {
         // Get the wasm class and call the init method
         try {
             Class<?> c = getWasmClass(moduleName);
-            c.getDeclaredMethod(Compile.getInitMethodName(), InstanceLimiter.class, Map.class).invoke(null, limiter, javaModuleData);
+            c.getDeclaredMethod(Compile.getInitMethodName(), InstanceLimiter.class, Map.class, WasmModule.class).invoke(null, limiter, javaModuleData, module);
         } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
             throw new IllegalStateException("Failed to locate/call init method? Should always succeed!", e);
         }

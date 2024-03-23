@@ -31,6 +31,7 @@ public class Compile {
     public static String getGlueFuncName(int index) { return "func_" + index + "_glue"; }
     public static String getGlobalInstanceName(String javaModuleName) { return "global_instance_" + javaModuleName; }
     public static String getGlobalName(int index) { return "global_" + index; }
+    public static String getDataFieldName(int index) { return "data_" + index; }
     public static String getExportFuncName(String exportName) { return "export_func_" + exportName; }
 
     // Get the name of the limiter field
@@ -63,7 +64,7 @@ public class Compile {
         // Create the initialization method
         MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
         emitGlobals(writer, javaModules, limiter, moduleName, module, init);
-        emitMemory(writer, moduleName, module, init);
+        emitMemory(writer, limiter, moduleName, module, init);
         emitDatas(writer, javaModules, limiter, moduleName, module, init);
         emitTables(writer, moduleName, module, init);
         init.visitInsn(Opcodes.RETURN);
@@ -190,7 +191,7 @@ public class Compile {
     private static MethodVisitor beginInitMethod(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName) {
         // Create the MethodVisitor
         int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
-        String descriptor = "(" + Type.getDescriptor(InstanceLimiter.class) + Type.getDescriptor(Map.class) + ")V";
+        String descriptor = "(" + Type.getDescriptor(InstanceLimiter.class) + Type.getDescriptor(Map.class) + Type.getDescriptor(WasmModule.class) + ")V";
         MethodVisitor init = writer.visitMethod(access, getInitMethodName(), descriptor, null, null);
 
         // Create the limiter field and fill it in
@@ -228,14 +229,14 @@ public class Compile {
             // Create field:
             writer.visitField(access, getGlobalName(index), global.globalType().valType().desc(), null, null);
             // Initialize:
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref), global.initializer()), init);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), global.initializer()), init);
             instVisitor.visitExpr(global.initializer());
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().desc());
         }
         // TODO: For each export, generate a public function to grab the field
     }
 
-    private static void emitMemory(ClassVisitor writer, String moduleName, WasmModule module, MethodVisitor init) {
+    private static void emitMemory(ClassVisitor writer, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
         // Create the various "memory" fields, which are byte[], as well as other helper fields.
         // Also initialize these fields in init.
         String className = getClassName(moduleName);
@@ -243,9 +244,19 @@ public class Compile {
 
         for (int index = 0; index < module.memories.size(); index++) {
             Limits limits = module.memories.get(index);
-            // Create fields and get <init> to fill them with values
+            // Create fields and get <init> to fill them with values.
             writer.visitField(privateStatic, getMemoryName(index), "[B", null, null); // Create memory field
-            init.visitLdcInsn(WASM_PAGE_SIZE * 32); // TODO limits.min, make memory grow from byte data
+            // Increase memory usage count when doing this, if needed
+            // Error out if the requested size is too big
+            int initialSize = Math.multiplyExact(limits.min(), WASM_PAGE_SIZE);
+            if (limiter.countsMemory) {
+                // Increment memory use by the initial size
+                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+                BytecodeHelper.constLong(init, initialSize); // [limiter, initialSize]
+                init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
+            }
+            // Create the field
+            init.visitLdcInsn(limits.min() * WASM_PAGE_SIZE);
             init.visitIntInsn(Opcodes.NEWARRAY, Opcodes.T_BYTE);
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getMemoryName(index), "[B");
         }
@@ -268,20 +279,54 @@ public class Compile {
     private static void emitDatas(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
         for (int dataIndex = 0; dataIndex < module.datas.size(); dataIndex++) {
             Data data = module.datas.get(dataIndex);
-            // TODO: Make this use a more efficient system for initializing bytes, this one is complete garbage lol
-            if (data.mode instanceof Data.Mode.Active activeMode) {
-                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(activeMode.memIndex()), "[B");
-                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref), activeMode.offset()), init);
-                instVisitor.visitExpr(activeMode.offset());
-                for (byte b : data.init) {
-                    // [arr, index]
-                    init.visitInsn(Opcodes.DUP2); // [arr, index, arr, index]
-                    BytecodeHelper.constInt(init, b); // [arr, index, arr, index, byte]
-                    init.visitInsn(Opcodes.BASTORE); // [arr, index]
-                    BytecodeHelper.constInt(init, 1); // [arr, index, 1]
-                    init.visitInsn(Opcodes.IADD); // [arr, index+1]
-                }
+
+            // Store each data byte[] in a field.
+            // Increment memory usage by the byte[]'s size:
+            if (limiter.countsMemory) {
+                // Increment memory use by the byte array size
+                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+                BytecodeHelper.constLong(init, data.init.length); // [limiter, size]
+                init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
             }
+
+            // Create the field:
+            writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getDataFieldName(dataIndex), "[B", null, null);
+            // Fetch the byte[] instance from the module, which is the third parameter to the init method
+            init.visitVarInsn(Opcodes.ALOAD, 2); // [module]
+            init.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(WasmModule.class), "datas", Type.getDescriptor(List.class)); // [module.datas]
+            BytecodeHelper.constInt(init, dataIndex); // [module.datas, dataIndex]
+            init.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.getInternalName(List.class), "get", "(I)Ljava/lang/Object;", true); // [module.datas.get(dataIndex)]
+            init.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(Data.class)); // [module.datas.get(dataIndex)]
+            init.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(Data.class), "init", "[B"); // [module.datas.get(dataIndex).init]
+            // Store it in the newly created field:
+            init.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getDataFieldName(dataIndex), "[B");
+
+            // If the data is active, then "memory.init" it right away, and then "data.drop" it:
+            if (data.mode instanceof Data.Mode.Active activeMode) {
+                // Create a visitor
+                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), init);
+                // Visit the code to init, then drop.
+                instVisitor.visitExpr(activeMode.offset()); // Stack = [offset (destination)]
+                instVisitor.visitI32Const(new Instruction.I32Const(0)); // [offset, 0 (source)]
+                instVisitor.visitI32Const(new Instruction.I32Const(data.init.length)); // [dest, src, len]
+                instVisitor.visitMemoryInit(new Instruction.MemoryInit(dataIndex)); // []
+                instVisitor.visitDataDrop(new Instruction.DataDrop(dataIndex)); // Drop the data
+            }
+
+//            // TODO: Make this use a more efficient system for initializing bytes, this one is complete garbage lol
+//            if (data.mode instanceof Data.Mode.Active activeMode) {
+//                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(activeMode.memIndex()), "[B");
+//                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), init);
+//                instVisitor.visitExpr(activeMode.offset());
+//                for (byte b : data.init) {
+//                    // [arr, index]
+//                    init.visitInsn(Opcodes.DUP2); // [arr, index, arr, index]
+//                    BytecodeHelper.constInt(init, b); // [arr, index, arr, index, byte]
+//                    init.visitInsn(Opcodes.BASTORE); // [arr, index]
+//                    BytecodeHelper.constInt(init, 1); // [arr, index, 1]
+//                    init.visitInsn(Opcodes.IADD); // [arr, index+1]
+//                }
+//            }
         }
     }
 

@@ -106,15 +106,4 @@ public class WasmJImpl {
         }
     }
 
-    public record FancyPrinter(String suffix) {
-        @WasmJAllow
-        @ByteArrayAccess
-        public void print_str(int ptr, int len, byte[] mem) {
-            String s = new String(mem, ptr, len, StandardCharsets.UTF_8);
-            System.out.println(s + suffix); // Comment print for perf
-        }
-    }
-
-
-
 }

@@ -20,7 +20,7 @@ import org.objectweb.asm.Type;
 import java.lang.invoke.VarHandle;
 import java.util.*;
 
-import static io.github.toomanylimits.wasmj.compiler.Compile.TABLE_DESCRIPTOR;
+import static io.github.toomanylimits.wasmj.compiler.Compile.*;
 
 public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
@@ -205,6 +205,18 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.DUP_X2);
         visitor.visitInsn(Opcodes.POP);
         visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false);
+    }
+
+    // Decrements memory usage, using the long value on top of the stack as the count. Consumes the long.
+    // Assumes that the limiter counts memory.
+    private void decrementMemoryByTopElement() {
+        if (!limiter.countsMemory)
+            throw new IllegalStateException("Method decrementMemoryByTopElement should only be called if limiter.countsMemory is true!");
+        // Get limiter, swap, call inc
+        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+        visitor.visitInsn(Opcodes.DUP_X2);
+        visitor.visitInsn(Opcodes.POP);
+        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "decHeapMemoryUsed", "(J)V", false);
     }
 
     // Decrements/increments the ref count of the top element.
@@ -1368,10 +1380,52 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         return null;
     }
     @Override public Void visitMemoryInit(Instruction.MemoryInit inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        abstractStack.applyStackType(inst.stackType());
+        // Stack = [dest, src, count]
+
+        // Verify args:
+        // Ensure count > 0:
+        visitor.visitInsn(Opcodes.DUP);
+        Label okay = new Label();
+        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call memory.init with \"count\" above i32_max. WasmJ doesn't support this!");
+        visitor.visitLabel(okay);
+
+        // Apply instruction penalty equal to "count / 8", for the arraycopy.
+        if (limiter.countsInstructions) {
+            visitor.visitInsn(Opcodes.DUP); // [dest, src, count, count]
+            BytecodeHelper.constInt(visitor, 8); // [dest, src, count, count, 8]
+            visitor.visitInsn(Opcodes.IDIV); // [dest, src, count, count / 8]
+            visitor.visitInsn(Opcodes.I2L);
+            incrementInstructionsByTopElement(); // [dest, src, count]
+        }
+
+        // Shuffle things around to get them in order for the arraycopy() call:
+        visitor.visitVarInsn(Opcodes.ISTORE, code.nextLocalSlot()); // nextLocal = count, [dest, src]
+        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getDataFieldName(inst.dataIndex()), "[B"); // [dest, src, data array]
+        visitor.visitInsn(Opcodes.DUP_X2); // [data array, dest, src, data array]
+        visitor.visitInsn(Opcodes.POP); // [data array, dest, src]
+        visitor.visitInsn(Opcodes.SWAP); // [data array, src, dest]
+        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(0), "[B"); // [data array, src, dest, mem array]
+        visitor.visitInsn(Opcodes.SWAP); // [data array, src, mem array, dest]
+        visitor.visitVarInsn(Opcodes.ILOAD, code.nextLocalSlot()); // [data, src, mem, dest, count]
+        // Call arraycopy():
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false); // [newArray]
+        // Stack is now empty.
+        return null;
     }
     @Override public Void visitDataDrop(Instruction.DataDrop inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        abstractStack.applyStackType(inst.stackType());
+        // Decrement memory counter, if needed:
+        if (limiter.countsMemory) {
+            int len = module.datas.get(inst.dataIndex()).init.length;
+            BytecodeHelper.constLong(visitor, len);
+            decrementMemoryByTopElement();
+        }
+        // Set the given data field to null, freeing the memory.
+        visitor.visitInsn(Opcodes.ACONST_NULL);
+        visitor.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getDataFieldName(inst.dataIndex()), "[B");
+        return null;
     }
     @Override public Void visitMemoryCopy(Instruction.MemoryCopy inst) {
         throw new UnsupportedOperationException("Not yet implemented");

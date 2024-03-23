@@ -17,20 +17,20 @@ import java.util.List;
 public class Main {
     public static void main(String[] args) throws Throwable {
 
-        InputStream inStream = Main.class.getResourceAsStream("test_string.wasm");
+        InputStream inStream = Main.class.getResourceAsStream("test_dog.wasm");
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
 
-        WasmInstance instance = new WasmInstance(Long.MAX_VALUE, 100);
+        WasmInstance instance = new WasmInstance(Long.MAX_VALUE, 1_500_000);
 //        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
         instance.addTypeModule("dog", WasmJImpl.Dog.class); // Test dog module
-        instance.addJavaModule("WasmJ", WasmJImpl.FancyPrinter.class, new WasmJImpl.FancyPrinter(" xD")); // Test global instance mode
-
+        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ
+//        instance.addJavaModule("WasmJ", WasmJImpl.FancyPrinter.class, new WasmJImpl.FancyPrinter(" xD")); // Test global instance mode
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
         // Testing code
-        WasmJCallable function = instance.getExportedFunction("aaa", "test_string");
+        WasmJCallable function = instance.getExportedFunction("aaa", "test_dog");
         long start = System.nanoTime();
         function.call();
         long end = System.nanoTime();
