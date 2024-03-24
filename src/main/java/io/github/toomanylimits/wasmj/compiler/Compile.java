@@ -34,6 +34,9 @@ public class Compile {
     public static String getElemFieldName(int index) { return "elem_" + index; }
     public static String getJavaExportFuncName(String exportName) { return "java_export_func_" + exportName; }
     public static String getWasmExportFuncName(String exportName) { return "wasm_export_func_" + exportName; }
+    public static String getExportedMemGetterName(String exportName) { return "get_exported_mem_" + exportName; }
+    public static String getExportedMemSetterName(String exportName) { return "set_exported_mem_" + exportName; }
+
 
     // Get the name of the limiter field
     public static String getLimiterName() { return "limiter"; }
@@ -67,6 +70,7 @@ public class Compile {
         MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
         emitGlobals(writer, javaModules, limiter, moduleName, module, init);
         emitMemory(writer, limiter, moduleName, module, init);
+        emitMemoryExports(writer, javaModules, moduleName, module);
         emitDatas(writer, javaModules, limiter, moduleName, module, init);
         emitTables(writer, limiter, moduleName, module, init);
         emitElements(writer, javaModules, limiter, moduleName, module, init);
@@ -275,7 +279,7 @@ public class Compile {
         for (int index = 0; index < module.memories.size(); index++) {
             Limits limits = module.memories.get(index);
             // Create fields and get <init> to fill them with values.
-            writer.visitField(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, getMemoryName(index), "[B", null, null); // Create memory field
+            writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getMemoryName(index), "[B", null, null); // Create memory field
             // Increase memory usage count when doing this, if needed
             // Error out if the requested size is too big
             int initialSize = Math.multiplyExact(limits.min(), WASM_PAGE_SIZE);
@@ -305,6 +309,57 @@ public class Compile {
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getMemoryVarHandleName(desc), Type.getDescriptor(VarHandle.class));
         }
         // TODO: For each export, generate a public function to grab the byte[]
+    }
+
+    private static void emitMemoryExports(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
+        for (Export export : module.exports) {
+            // Get only mem exports
+            if (export.type() != Export.ExportType.MEM) continue;
+            // Generate the getter and setter for the mem
+            if (export.index() < module.memImports().size()) {
+                Import.Mem memImport = module.memImports().get(export.index());
+                // Re-exporting an imported memory
+                if (javaModules.containsKey(memImport.moduleName))
+                    throw new UnsupportedOperationException("Cannot import memories from java modules");
+                else {
+                    // It's re-exporting an imported wasm memory. Delegate the function calls.
+                    int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                    // Getter:
+                    MethodVisitor getter = writer.visitMethod(access, getExportedMemGetterName(export.name()), "()[B", null,null);
+                    getter.visitCode();
+                    getter.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(memImport.moduleName), getExportedMemGetterName(memImport.elementName), "()[B", false);
+                    getter.visitInsn(Opcodes.ARETURN);
+                    getter.visitMaxs(0, 0);
+                    getter.visitEnd();
+                    // Setter:
+                    MethodVisitor setter = writer.visitMethod(access, getExportedMemSetterName(export.name()), "([B)V", null, null);
+                    setter.visitCode();
+                    setter.visitVarInsn(Opcodes.ALOAD, 0);
+                    setter.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(memImport.moduleName), getExportedMemSetterName(memImport.elementName), "([B)V", false);
+                    setter.visitInsn(Opcodes.RETURN);
+                    setter.visitMaxs(0, 0);
+                    setter.visitEnd();
+                }
+            } else {
+                // Generate getter and setter
+                int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                // Getter:
+                MethodVisitor getter = writer.visitMethod(access, getExportedMemGetterName(export.name()), "()[B", null, null);
+                getter.visitCode();
+                getter.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(export.index()), "[B");
+                getter.visitInsn(Opcodes.ARETURN);
+                getter.visitMaxs(0, 0);
+                getter.visitEnd();
+                // Setter:
+                MethodVisitor setter = writer.visitMethod(access, getExportedMemSetterName(export.name()), "([B)V", null, null);
+                setter.visitCode();
+                setter.visitVarInsn(Opcodes.ALOAD, 0);
+                setter.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getMemoryName(export.index()), "[B");
+                setter.visitInsn(Opcodes.RETURN);
+                setter.visitMaxs(0, 0);
+                setter.visitEnd();
+            }
+        }
     }
 
     private static void emitDatas(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {

@@ -264,6 +264,47 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitLabel(end);
     }
 
+    // Pushes the byte[] to the stack with the given memory index.
+    // Handles imports.
+    // memIndex should always be 0, since WASM doesn't support
+    // multiple memories (yet?)
+    private void pushMemory(int memIndex) {
+        if (memIndex < module.memImports().size()) {
+            Import.Mem memImport = module.memImports().get(memIndex);
+            if (javaModules.containsKey(memImport.moduleName))
+                throw new UnsupportedOperationException("Cannot import memories from java modules");
+            else {
+                // Call the getter
+                String className = Compile.getClassName(memImport.moduleName);
+                String methodName = Compile.getExportedMemGetterName(memImport.elementName); // Getter!
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, "()[B", false); // Call it
+            }
+        } else {
+            // Fetch the field
+            int adjustedIndex = memIndex - module.memImports().size();
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(adjustedIndex), "[B");
+        }
+    }
+    // Takes the top element of the stack, a byte[], and replaces the memory at the given index with it.
+    // Handles imports.
+    private void storeMemory(int memIndex) {
+        if (memIndex < module.memImports().size()) {
+            Import.Mem memImport = module.memImports().get(memIndex);
+            if (javaModules.containsKey(memImport.moduleName))
+                throw new UnsupportedOperationException("Cannot import memories from java modules");
+            else {
+                // Call the setter
+                String className = Compile.getClassName(memImport.moduleName);
+                String methodName = Compile.getExportedMemSetterName(memImport.elementName); // Setter!
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, "([B)V", false); // Call it
+            }
+        } else {
+            // Store in the field
+            int adjustedIndex = memIndex - module.memImports().size();
+            visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(adjustedIndex), "[B");
+        }
+    }
+
     /**
      * Return the elements of the given type, in an array.
      * Used when exporting helper functions.
@@ -693,7 +734,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                         visitor.visitInsn(Opcodes.ACONST_NULL);
                     } else {
                         // Get the memory byte[] and put on the stack
-                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B");
+                        pushMemory(0);
                     }
                 }
                 if (funcData.hasLimiterAccess()) {
@@ -1280,7 +1321,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // [index], locals = []
             BytecodeHelper.constInt(visitor, offset); // [index, offset]
             visitor.visitInsn(Opcodes.IADD); // [index + offset]
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryName(memIndex), Type.getDescriptor(byte[].class)); // [index + offset, memArray]
+            pushMemory(memIndex); // [index + offset, memArray]
             visitor.visitInsn(Opcodes.SWAP); // [memArray, index + offset]
             visitor.visitInsn(Opcodes.BALOAD); // [memArray[index + offset]]
         } else {
@@ -1290,7 +1331,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             visitor.visitInsn(Opcodes.IADD); // [index + offset], locals = []
             BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [], locals = [index + offset]
             visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryVarHandleName(typeDesc), Type.getDescriptor(VarHandle.class)); // [VarHandle], locals = [index + offset]
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryName(memIndex), Type.getDescriptor(byte[].class)); // [VarHandle, memArray], locals = [index + offset]
+            pushMemory(memIndex); // [VarHandle, memArray], locals = [index + offset]
             BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [VarHandle, memArray, index + offset]
             visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(VarHandle.class), "get", "([BI)" + typeDesc, false); // memArray[index + offset] as <type>
         }
@@ -1396,7 +1437,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             BytecodeHelper.constInt(visitor, offset); // [value, index, offset]
             visitor.visitInsn(Opcodes.IADD); // [value, index + offset]
             visitor.visitInsn(Opcodes.SWAP); // [index + offset, value]
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryName(memIndex), Type.getDescriptor(byte[].class)); // [index + offset, value, memArray]
+            pushMemory(memIndex); // [index + offset, value, memArray]
             visitor.visitInsn(Opcodes.DUP_X2); // [memArray, index + offset, value, memArray]
             visitor.visitInsn(Opcodes.POP); // [memArray, index + offset, value]
             visitor.visitInsn(Opcodes.BASTORE); // []. memArray[index + offset] is now value.
@@ -1408,7 +1449,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             visitor.visitInsn(Opcodes.IADD); // [index + offset], locals = [value]
             BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots(), ValType.i32); // [], locals = [value, index + offset]
             visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryVarHandleName(typeDesc), Type.getDescriptor(VarHandle.class)); // [VarHandle], locals = [value, index + offset]
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryName(memIndex), Type.getDescriptor(byte[].class)); // [VarHandle, memArray], locals = [value, index + offset]
+            pushMemory(memIndex); // [VarHandle, memArray], locals = [value, index + offset]
             BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots(), ValType.i32); // [VarHandle, memArray, index + offset], locals = [value]
             BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), wasmType); // [VarHandle, memArray, index + offset, value], locals = []
             visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(VarHandle.class), "set", "([BI" + typeDesc + ")V", false); // Stack = []. memArray[index + offset] is now value.
@@ -1475,7 +1516,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitMemorySize(Instruction.MemorySize inst) {
         abstractStack.applyStackType(inst.stackType());
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B");
+        pushMemory(0);
         visitor.visitInsn(Opcodes.ARRAYLENGTH);
         BytecodeHelper.constInt(visitor, Compile.WASM_PAGE_SIZE);
         visitor.visitInsn(Opcodes.IDIV);
@@ -1496,7 +1537,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         // If counting instructions, then increment instruction counter by
         // currentSize.length / 8 (arbitrary). This is to pay for the arraycopy.
         if (limiter.countsInstructions) {
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B"); // [memArray]
+            pushMemory(0);
             visitor.visitInsn(Opcodes.ARRAYLENGTH);
             visitor.visitInsn(Opcodes.I2L);
             BytecodeHelper.constLong(visitor, 8L);
@@ -1515,7 +1556,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         // Stack = [requestedPages]
         BytecodeHelper.constInt(visitor, Compile.WASM_PAGE_SIZE); // [requestedPages, pageSize]
         visitor.visitInsn(Opcodes.IMUL); // [requestedPages * pageSize]
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B"); // [requestedPages * pageSize, memArray]
+        pushMemory(0); // [requestedPages * pageSize, memArray]
         visitor.visitInsn(Opcodes.DUP); // [requestedPages * pageSize, memArray, memArray]
         visitor.visitInsn(Opcodes.ARRAYLENGTH); // [requestedPages * pageSize, memArray, memArray.length]
         BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [requestedPages * pageSize, memArray]. Locals = [memArray.length]
@@ -1530,7 +1571,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         BytecodeHelper.constInt(visitor, 0); // [newArray, memArray, 0, newArray, 0]
         BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [newArray, memArray, 0, newArray, 0, memArray.length]
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false); // [newArray]
-        visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(0), "[B"); // []
+        storeMemory(0); // []
         BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [memArray.length]
         BytecodeHelper.constInt(visitor, Compile.WASM_PAGE_SIZE); // [memArray.length, PAGE_SIZE]
         visitor.visitInsn(Opcodes.IDIV); // [memArray.length / PAGE_SIZE]
@@ -1563,7 +1604,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.DUP_X2); // [data array, dest, src, data array]
         visitor.visitInsn(Opcodes.POP); // [data array, dest, src]
         visitor.visitInsn(Opcodes.SWAP); // [data array, src, dest]
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(0), "[B"); // [data array, src, dest, mem array]
+        pushMemory(0); // [data array, src, dest, mem array]
         visitor.visitInsn(Opcodes.SWAP); // [data array, src, mem array, dest]
         visitor.visitVarInsn(Opcodes.ILOAD, code.nextLocalSlot()); // [data, src, mem, dest, count]
         // Call arraycopy():
