@@ -109,7 +109,7 @@ public class WasmInstance {
     public ExportedFunction getExportedFunction(String wasmModuleName, String exportName) {
         Class<?> wasmClass = getWasmClass(wasmModuleName);
         if (wasmClass == null) return null;
-        String desiredName = Compile.getExportFuncName(exportName);
+        String desiredName = Compile.getJavaExportFuncName(exportName);
         Method m = ListUtils.first(Arrays.asList(wasmClass.getDeclaredMethods()), me -> me.getName().equals(desiredName));
         if (m == null) return null;
         return args -> (Object[]) m.invoke(null, args);

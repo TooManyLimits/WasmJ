@@ -32,7 +32,8 @@ public class Compile {
     public static String getGlobalName(int index) { return "global_" + index; }
     public static String getDataFieldName(int index) { return "data_" + index; }
     public static String getElemFieldName(int index) { return "elem_" + index; }
-    public static String getExportFuncName(String exportName) { return "export_func_" + exportName; }
+    public static String getJavaExportFuncName(String exportName) { return "java_export_func_" + exportName; }
+    public static String getWasmExportFuncName(String exportName) { return "wasm_export_func_" + exportName; }
 
     // Get the name of the limiter field
     public static String getLimiterName() { return "limiter"; }
@@ -60,7 +61,7 @@ public class Compile {
 
         emitFunctions(writer, javaModules, limiter, moduleName, module);
         emitGlueFunctions(writer, javaModules, moduleName, module);
-        emitExportedFunctions(writer, javaModules, limiter, moduleName, module);
+        emitExportFunctions(writer, javaModules, limiter, moduleName, module);
 
         // Create the initialization method
         MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
@@ -107,7 +108,7 @@ public class Compile {
                 BytecodeHelper.storeLocal(visitor, mappedIndex, localType);
             }
             // Visit instructions
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, code, visitor);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, code, funcType, visitor);
             instVisitor.visitExpr(code.expr);
             // Emit a return
             instVisitor.visitReturn(Instruction.Return.INSTANCE);
@@ -117,7 +118,7 @@ public class Compile {
         }
     }
 
-    // Emit glue functions for methods in javaModules, involving specialized reference type receivers
+    // Emit glue functions for methods in javaModules, involving specialized reference type params/receivers
     private static void emitGlueFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
         // Iterate over func imports
         for (int i = 0; i < module.funcImports().size(); i++) {
@@ -135,11 +136,17 @@ public class Compile {
         }
     }
 
-    private static void emitExportedFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module) {
+    /**
+     * Emit 2 functions for each exported function.
+     * One is designed to be called from JAVA,
+     * the other is called from WASM.
+     */
+    private static void emitExportFunctions(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module) {
         for (Export export : module.exports) {
             if (export.type() != Export.ExportType.FUNC) continue;
 
             FuncType funcType;
+            int funcTypeIndex = 0;
             if (export.index() < module.funcImports().size()) {
                 // It's an import
                 Import.Func funcImport = module.funcImports().get(export.index());
@@ -148,39 +155,61 @@ public class Compile {
                     JavaModuleData.MethodData funcData = javaModules.get(funcImport.moduleName).allowedMethods.get(funcImport.elementName);
                     if (funcData == null)
                         throw new IllegalArgumentException("Failed to compile - unrecognized function \"" + funcImport.moduleName + "." + funcImport.elementName + "\"");
-                    // Generate glue function, using exported name
-                    funcData.writeGlue(writer, getExportFuncName(export.name()), moduleName, funcImport.moduleName);
-                    // We wrote the glue, continue
+                    // Generate java glue function, using exported name:
+                    funcData.writeGlue(writer, getJavaExportFuncName(export.name()), moduleName, funcImport.moduleName);
+                    // The glue function is also callable by wasm:
+                    funcData.writeGlue(writer, getWasmExportFuncName(export.name()), moduleName, funcImport.moduleName);
+                    // We wrote the glue, continue.
                     continue;
+                } else {
+                    // It's an imported WASM function:
+                    funcType = module.types.get(funcImport.typeIndex);
                 }
-                // It's an imported WASM function:
-                funcType = module.types.get(funcImport.typeIndex);
             } else {
                 // Local WASM function:
                 funcType = module.types.get(module.functions.get(export.index() - module.funcImports().size()));
             }
 
-            // It's a WASM function. Emit a function to call it.
-            int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
-            String methodName = getExportFuncName(export.name());
-            StringBuilder descriptor = new StringBuilder("(");
-            for (ValType paramType: funcType.args)
-                descriptor.append(paramType.desc());
-            descriptor.append(")[Ljava/lang/Object;"); // Returns an object array
-            MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor.toString(), null, null);
-            methodVisitor.visitCode();
-            Code tempCode = new Code(-1, -1, funcType.args, new Expression(List.of()));
-            MethodWritingVisitor visitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, tempCode, methodVisitor);
-
-            // Get the visitor to load all the locals, do the call, then return.
-            for (int i = 0; i < funcType.args.size(); i++)
-                visitor.visitLocalGet(new Instruction.LocalGet(i)); // Load all locals
-            visitor.visitCall(new Instruction.Call(export.index())); // Call the function
-            visitor.returnArrayToJavaCaller(funcType.results); // Return results as list
-
-            // End the methodVisitor
-            methodVisitor.visitMaxs(0, 0);
-            methodVisitor.visitEnd();
+            // It's a WASM function. Emit functions to call it:
+            // Emit the java function:
+            {
+                int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                String methodName = getJavaExportFuncName(export.name()); // GetJavaExportName!
+                StringBuilder descriptor = new StringBuilder("(");
+                for (ValType paramType: funcType.args)
+                    descriptor.append(paramType.desc());
+                descriptor.append(")[Ljava/lang/Object;"); // Returns an object array
+                MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor.toString(), null, null);
+                methodVisitor.visitCode();
+                Code tempCode = new Code(-1, -1, funcType.args, new Expression(List.of()));
+                MethodWritingVisitor visitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, tempCode, funcType, methodVisitor);
+                // Get the visitor to load all the locals, do the call, then return.
+                for (int i = 0; i < funcType.args.size(); i++)
+                    visitor.visitLocalGet(new Instruction.LocalGet(i)); // Load all locals
+                visitor.visitCall(new Instruction.Call(export.index())); // Call the function
+                visitor.returnArrayToJavaCaller(funcType.results); // Return results as array, to java caller
+                // End the methodVisitor
+                methodVisitor.visitMaxs(0, 0);
+                methodVisitor.visitEnd();
+            }
+            // Emit the wasm function:
+            {
+                int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                String methodName = getWasmExportFuncName(export.name()); // GetWasmExportName!
+                String descriptor = funcType.descriptor();
+                MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor, null, null);
+                methodVisitor.visitCode();
+                Code tempCode = new Code(-1, -1, funcType.args, new Expression(List.of()));
+                MethodWritingVisitor visitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, tempCode, funcType, methodVisitor);
+                // Get the visitor to load all the locals, do the call, then return.
+                for (int i = 0; i < funcType.args.size(); i++)
+                    visitor.visitLocalGet(new Instruction.LocalGet(i)); // Load all locals
+                visitor.visitCall(new Instruction.Call(export.index())); // Call the function
+                visitor.visitReturn(Instruction.Return.INSTANCE); // Return value
+                // End the methodVisitor
+                methodVisitor.visitMaxs(0, 0);
+                methodVisitor.visitEnd();
+            }
         }
     }
 
@@ -227,11 +256,11 @@ public class Compile {
         String className = getClassName(moduleName);
         for (int index = 0; index < module.globals.size(); index++) {
             Global global = module.globals.get(index);
-            int access = Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC;
+            int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
             // Create field:
             writer.visitField(access, getGlobalName(index), global.globalType().valType().desc(), null, null);
             // Initialize:
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), global.initializer()), init);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), global.initializer()), null, init);
             instVisitor.visitExpr(global.initializer());
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().desc());
         }
@@ -242,12 +271,11 @@ public class Compile {
         // Create the various "memory" fields, which are byte[], as well as other helper fields.
         // Also initialize these fields in init.
         String className = getClassName(moduleName);
-        int privateStatic = Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC;
 
         for (int index = 0; index < module.memories.size(); index++) {
             Limits limits = module.memories.get(index);
             // Create fields and get <init> to fill them with values.
-            writer.visitField(privateStatic, getMemoryName(index), "[B", null, null); // Create memory field
+            writer.visitField(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, getMemoryName(index), "[B", null, null); // Create memory field
             // Increase memory usage count when doing this, if needed
             // Error out if the requested size is too big
             int initialSize = Math.multiplyExact(limits.min(), WASM_PAGE_SIZE);
@@ -266,7 +294,8 @@ public class Compile {
             Type arr = Type.getType(primitive.arrayType());
             String desc = Type.getDescriptor(primitive);
             // Create the field
-            writer.visitField(privateStatic, getMemoryVarHandleName(desc), Type.getDescriptor(VarHandle.class), null, null);
+            // TODO: Do these need to be final for best performance? Check later, can probably change if needed
+            writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getMemoryVarHandleName(desc), Type.getDescriptor(VarHandle.class), null, null);
             // Fill it in init
             init.visitLdcInsn(arr);
             init.visitFieldInsn(Opcodes.GETSTATIC, Type.getInternalName(ByteOrder.class), "LITTLE_ENDIAN", Type.getDescriptor(ByteOrder.class));
@@ -306,7 +335,7 @@ public class Compile {
             // If the data is active, then "memory.init" it right away, and then "data.drop" it:
             if (data.mode instanceof Data.Mode.Active activeMode) {
                 // Create a visitor
-                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), init);
+                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), null, init);
                 // Visit the code to init, then drop.
                 instVisitor.visitExpr(activeMode.offset()); // Stack = [offset (destination)]
                 instVisitor.visitI32Const(new Instruction.I32Const(0)); // [offset, 0 (source)]
@@ -320,7 +349,6 @@ public class Compile {
     private static void emitTables(ClassVisitor writer, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
         // Create the various "table" fields, which are Object[].
         String className = getClassName(moduleName);
-        int privateStatic = Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC;
         for (int index = 0; index < module.tables.size(); index++) {
             TableType tableType = module.tables.get(index);
             int initialSize = tableType.limits().min();
@@ -334,7 +362,7 @@ public class Compile {
             // Create fields and get init to fill them with values
             String descriptor = tableType.elementType() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 
-            writer.visitField(privateStatic, getTableName(index), descriptor, null, null); // Create table field
+            writer.visitField(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, getTableName(index), descriptor, null, null); // Create table field
             init.visitLdcInsn(initialSize);
             init.visitTypeInsn(Opcodes.ANEWARRAY, descriptor.substring(2, descriptor.length() - 1));
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), descriptor);
@@ -348,7 +376,7 @@ public class Compile {
 
             // After this if-else, we're going to want an array on the stack, followed by an index.
             Code temp = new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), null);
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, temp, init);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, temp, null, init);
 
             String descriptor = elem.type() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 

@@ -26,16 +26,18 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     private final String moduleName;
     private final WasmModule module;
     private final Code code;
+    private final FuncType funcType; // The type of the function we're in. Used only when returning.
     private final MethodVisitor visitor;
     private final Map<String, JavaModuleData<?>> javaModules;
     private final InstanceLimiter limiter;
 
-    public MethodWritingVisitor(Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, Code code, MethodVisitor visitor) {
+    public MethodWritingVisitor(Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, Code code, FuncType funcType, MethodVisitor visitor) {
         this.javaModules = javaModules;
         this.limiter = limiter;
         this.moduleName = moduleName;
         this.module = module;
         this.code = code;
+        this.funcType = funcType;
         this.visitor = visitor;
     }
 
@@ -600,7 +602,8 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
         // Pop off the first elements of the stack that are getting returned.
         // Their refcounts shouldn't be modified.
-        FuncType functionType = module.types.get(module.functions.get(code.index));
+        FuncType functionType = this.funcType;
+//        FuncType functionType = module.types.get(module.functions.get(code.index));
         for (int i = functionType.results.size() - 1; i >= 0; i--)
             abstractStack.popExpecting(functionType.results.get(i));
 
@@ -728,8 +731,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             } else {
                 // Apply type to abstract stack.
                 abstractStack.applyStackType(funcType.asStackType());
-                // Wasm function is called, simply invokestatic.
-                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Compile.getClassName(imported.moduleName), imported.elementName, funcType.descriptor(), false);
+                // Wasm function is called, simply invokestatic:
+                String className = Compile.getClassName(imported.moduleName);
+                String methodName = Compile.getWasmExportFuncName(imported.elementName);
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, funcType.descriptor(), false);
                 // If a wasm function returns an Object, we don't update the refcounter, but we still update the local variable.
                 if (limiter.countsMemory) {
                     // TODO: Multiple returns
