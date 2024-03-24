@@ -106,13 +106,13 @@ public class WasmInstance {
      * Gets the exported function in the given module with the given name.
      * If there is no such function, returns null.
      */
-    public WasmJCallable getExportedFunction(String wasmModuleName, String exportName) {
+    public ExportedFunction getExportedFunction(String wasmModuleName, String exportName) {
         Class<?> wasmClass = getWasmClass(wasmModuleName);
         if (wasmClass == null) return null;
         String desiredName = Compile.getExportFuncName(exportName);
         Method m = ListUtils.first(Arrays.asList(wasmClass.getDeclaredMethods()), me -> me.getName().equals(desiredName));
         if (m == null) return null;
-        return args -> (List<Object>) m.invoke(null, args);
+        return args -> (Object[]) m.invoke(null, args);
     }
 
     /**

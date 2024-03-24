@@ -31,6 +31,8 @@ public class FuncType {
             for (ValType arg : args)
                 res.append(arg.desc());
             res.append(")");
+            if (results.size() > 1)
+                throw new UnsupportedOperationException("Multiple returns not (yet?) supported by WasmJ");
             if (results.size() == 0)
                 res.append("V");
             else

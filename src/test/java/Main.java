@@ -1,17 +1,9 @@
-import io.github.toomanylimits.wasmj.compiler.Compile;
+import io.github.toomanylimits.wasmj.runtime.ExportedFunction;
 import io.github.toomanylimits.wasmj.runtime.WasmInstance;
-import io.github.toomanylimits.wasmj.parsing.module.Export;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
-import io.github.toomanylimits.wasmj.runtime.WasmJCallable;
 import io.github.toomanylimits.wasmj.runtime.reflect.WasmJImpl;
-import io.github.toomanylimits.wasmj.util.ListUtils;
 
 import java.io.InputStream;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.reflect.Method;
-import java.util.Arrays;
-import java.util.List;
 
 
 public class Main {
@@ -30,9 +22,9 @@ public class Main {
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
         // Testing code
-        WasmJCallable function = instance.getExportedFunction("aaa", "test_dog");
+        ExportedFunction function = instance.getExportedFunction("aaa", "test_dog");
         long start = System.nanoTime();
-        function.call();
+        function.invoke();
         long end = System.nanoTime();
 //        function.call();
         long end2 = System.nanoTime();

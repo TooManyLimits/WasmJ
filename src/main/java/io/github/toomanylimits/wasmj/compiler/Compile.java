@@ -10,7 +10,6 @@ import io.github.toomanylimits.wasmj.parsing.types.TableType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
-import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 
@@ -32,6 +31,7 @@ public class Compile {
     public static String getGlobalInstanceName(String javaModuleName) { return "global_instance_" + javaModuleName; }
     public static String getGlobalName(int index) { return "global_" + index; }
     public static String getDataFieldName(int index) { return "data_" + index; }
+    public static String getElemFieldName(int index) { return "elem_" + index; }
     public static String getExportFuncName(String exportName) { return "export_func_" + exportName; }
 
     // Get the name of the limiter field
@@ -46,6 +46,7 @@ public class Compile {
 
     public static String getTableName(int index) { return "table_" + index; }
     public static final String TABLE_DESCRIPTOR = Type.getDescriptor(RefCountable[].class);
+    public static final String FUNCREF_TABLE_DESCRIPTOR = Type.getDescriptor(FuncRefInstance[].class);
 
 
     // Instantiates the given module and creates a ByteArray, which is the bytecode for a class
@@ -66,7 +67,8 @@ public class Compile {
         emitGlobals(writer, javaModules, limiter, moduleName, module, init);
         emitMemory(writer, limiter, moduleName, module, init);
         emitDatas(writer, javaModules, limiter, moduleName, module, init);
-        emitTables(writer, moduleName, module, init);
+        emitTables(writer, limiter, moduleName, module, init);
+        emitElements(writer, javaModules, limiter, moduleName, module, init);
         init.visitInsn(Opcodes.RETURN);
         init.visitMaxs(0, 0);
         init.visitEnd();
@@ -157,14 +159,14 @@ public class Compile {
                 // Local WASM function:
                 funcType = module.types.get(module.functions.get(export.index() - module.funcImports().size()));
             }
-            // It's a WASM function. Emit a function to call it.
 
+            // It's a WASM function. Emit a function to call it.
             int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
             String methodName = getExportFuncName(export.name());
             StringBuilder descriptor = new StringBuilder("(");
             for (ValType paramType: funcType.args)
                 descriptor.append(paramType.desc());
-            descriptor.append(")Ljava/util/List;"); // Returns a list
+            descriptor.append(")[Ljava/lang/Object;"); // Returns an object array
             MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor.toString(), null, null);
             methodVisitor.visitCode();
             Code tempCode = new Code(-1, -1, funcType.args, new Expression(List.of()));
@@ -174,7 +176,7 @@ public class Compile {
             for (int i = 0; i < funcType.args.size(); i++)
                 visitor.visitLocalGet(new Instruction.LocalGet(i)); // Load all locals
             visitor.visitCall(new Instruction.Call(export.index())); // Call the function
-            visitor.returnAsList(funcType.results); // Return results as list
+            visitor.returnArrayToJavaCaller(funcType.results); // Return results as list
 
             // End the methodVisitor
             methodVisitor.visitMaxs(0, 0);
@@ -312,37 +314,76 @@ public class Compile {
                 instVisitor.visitMemoryInit(new Instruction.MemoryInit(dataIndex)); // []
                 instVisitor.visitDataDrop(new Instruction.DataDrop(dataIndex)); // Drop the data
             }
-
-//            // TODO: Make this use a more efficient system for initializing bytes, this one is complete garbage lol
-//            if (data.mode instanceof Data.Mode.Active activeMode) {
-//                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(activeMode.memIndex()), "[B");
-//                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), init);
-//                instVisitor.visitExpr(activeMode.offset());
-//                for (byte b : data.init) {
-//                    // [arr, index]
-//                    init.visitInsn(Opcodes.DUP2); // [arr, index, arr, index]
-//                    BytecodeHelper.constInt(init, b); // [arr, index, arr, index, byte]
-//                    init.visitInsn(Opcodes.BASTORE); // [arr, index]
-//                    BytecodeHelper.constInt(init, 1); // [arr, index, 1]
-//                    init.visitInsn(Opcodes.IADD); // [arr, index+1]
-//                }
-//            }
         }
     }
 
-    private static void emitTables(ClassVisitor writer, String moduleName, WasmModule module, MethodVisitor init) {
+    private static void emitTables(ClassVisitor writer, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
         // Create the various "table" fields, which are Object[].
         String className = getClassName(moduleName);
         int privateStatic = Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC;
         for (int index = 0; index < module.tables.size(); index++) {
             TableType tableType = module.tables.get(index);
+            int initialSize = tableType.limits().min();
+            // Increment memory if needed
+            if (limiter.countsMemory) {
+                // Increment memory use by the initial size
+                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+                BytecodeHelper.constLong(init, (long) initialSize * 8L); // [limiter, initialSize * 8]
+                init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
+            }
             // Create fields and get init to fill them with values
-            writer.visitField(privateStatic, getTableName(index), TABLE_DESCRIPTOR, null, null); // Create table field
-            init.visitLdcInsn(256); // TODO limits.min, make table grow from element data
-            init.visitTypeInsn(Opcodes.ANEWARRAY, TABLE_DESCRIPTOR.substring(2, TABLE_DESCRIPTOR.length() - 1));
-            init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), TABLE_DESCRIPTOR);
+            String descriptor = tableType.elementType() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+
+            writer.visitField(privateStatic, getTableName(index), descriptor, null, null); // Create table field
+            init.visitLdcInsn(initialSize);
+            init.visitTypeInsn(Opcodes.ANEWARRAY, descriptor.substring(2, descriptor.length() - 1));
+            init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), descriptor);
         }
         // TODO: For each export, generate a public function to grab the Object[]
+    }
+
+    private static void emitElements(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
+        for (int elemIndex = 0; elemIndex < module.elements.size(); elemIndex++) {
+            Element elem = module.elements.get(elemIndex);
+
+            // After this if-else, we're going to want an array on the stack, followed by an index.
+            Code temp = new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), null);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, temp, init);
+
+            String descriptor = elem.type() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+
+            // If it's not active, increment memory usage and create a field:
+            if (!(elem.mode() instanceof Element.Mode.Active activeMode)) {
+                // Increment memory usage by the array's size:
+                if (limiter.countsMemory) {
+                    // Increment memory use by the array size
+                    init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
+                    BytecodeHelper.constLong(init, (long) elem.exprs().size() * 8L); // [limiter, size]
+                    init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
+                }
+                // Create the field and fill it with a new array:
+                writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, getElemFieldName(elemIndex), descriptor, null, null);
+                BytecodeHelper.constInt(init, elem.exprs().size()); // [size]
+                init.visitTypeInsn(Opcodes.ANEWARRAY, descriptor.substring(2, descriptor.length() - 1)); // [arr]
+                init.visitInsn(Opcodes.DUP); // [arr, arr]
+                init.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getElemFieldName(elemIndex), descriptor); // [arr]
+                init.visitInsn(Opcodes.ICONST_0); // [arr, 0]. Array + index are on stack.
+            } else {
+                // This is an active array. Put the table directly on the stack, then compute the offset.
+                init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getTableName(activeMode.tableIndex()), descriptor); // Stack = [table]
+                instVisitor.visitExpr(activeMode.offset()); // [table, index]
+            }
+
+            // Now, repeat for each expression: compute it and store in the array, then increment index.
+            for (Expression expr : elem.exprs()) {
+                init.visitInsn(Opcodes.DUP2); // [table, index, table, index]
+                instVisitor.visitExpr(expr); // Evaluate the expression. Stack = [table, index, table, index, element]
+                init.visitInsn(Opcodes.AASTORE); // [table, index]
+                init.visitInsn(Opcodes.ICONST_1); // [table, index, 1]
+                init.visitInsn(Opcodes.IADD); // [table, index + 1]
+            }
+            init.visitInsn(Opcodes.POP2); // []. Removed elements from stack top.
+        }
     }
 
 }
