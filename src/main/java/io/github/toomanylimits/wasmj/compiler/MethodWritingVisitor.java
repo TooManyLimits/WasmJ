@@ -175,7 +175,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
     }
 
-    private void incrementInstructions(long count) {
+    public void incrementInstructions(long count) {
         if (limiter.countsInstructions && count > 0) {
             // Get limiter, get count, call inc
             visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getLimiterName(), Type.getDescriptor(InstanceLimiter.class));
@@ -186,7 +186,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Increments instructions, using the long value on top of the stack as the count. Consumes the long.
     // Assumes that the limiter counts instructions.
-    private void incrementInstructionsByTopElement() {
+    public void incrementInstructionsByTopElement() {
         if (!limiter.countsInstructions)
             throw new IllegalStateException("Method incrementInstructionsByTopElement should only be called if limiter.countsInstructions is true!");
         // Get limiter, swap, call inc
@@ -198,7 +198,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Increments memory usage, using the long value on top of the stack as the count. Consumes the long.
     // Assumes that the limiter counts memory.
-    private void incrementMemoryByTopElement() {
+    public void incrementMemoryByTopElement() {
         if (!limiter.countsMemory)
             throw new IllegalStateException("Method incrementMemoryByTopElement should only be called if limiter.countsMemory is true!");
         // Get limiter, swap, call inc
@@ -210,7 +210,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Decrements memory usage, using the long value on top of the stack as the count. Consumes the long.
     // Assumes that the limiter counts memory.
-    private void decrementMemoryByTopElement() {
+    public void decrementMemoryByTopElement() {
         if (!limiter.countsMemory)
             throw new IllegalStateException("Method decrementMemoryByTopElement should only be called if limiter.countsMemory is true!");
         // Get limiter, swap, call inc
@@ -223,7 +223,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     // Decrements/increments the ref count of the top element.
     // Consumes the element, so dup it first if you still want it.
     // Assumes that the limiter counts heap memory.
-    private void decrementRefCountOfTopElement() {
+    public void decrementRefCountOfTopElement() {
         if (!limiter.countsMemory)
             throw new IllegalStateException("Method decrementRefCountOfTopElement should only be called if limiter.countsMemory is true!");
         // If null, skip
@@ -243,7 +243,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         // End
         visitor.visitLabel(end);
     }
-    private void incrementRefCountOfTopElement() {
+    public void incrementRefCountOfTopElement() {
         if (!limiter.countsMemory)
             throw new IllegalStateException("Method incrementRefCountOfTopElement should only be called if limiter.countsMemory is true!");
         // If null, skip
@@ -318,7 +318,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         int size = returnTypes.size();
         BytecodeHelper.constInt(visitor, size); // [...results, size]
         visitor.visitTypeInsn(Opcodes.ANEWARRAY, Type.getInternalName(Object.class)); // [...results, resultArray]
-        visitor.visitVarInsn(Opcodes.ASTORE, code.nextLocalSlot()); // [...results]
+        visitor.visitVarInsn(Opcodes.ASTORE, abstractStack.nextLocalSlot()); // [...results]
         BytecodeHelper.constInt(visitor, size); // [...results, size]
         visitor.visitInsn(Opcodes.ICONST_1); // [...results, size, 1]
         visitor.visitInsn(Opcodes.ISUB); // [...results, index = size - 1]
@@ -343,7 +343,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Box it:
             BytecodeHelper.boxValue(visitor, t);
             // Store in the array at the index
-            visitor.visitVarInsn(Opcodes.ALOAD, code.nextLocalSlot()); // [...results, index, index, lastResultBoxed, array]
+            visitor.visitVarInsn(Opcodes.ALOAD, abstractStack.nextLocalSlot()); // [...results, index, index, lastResultBoxed, array]
             visitor.visitInsn(Opcodes.DUP_X2); // [...results, index, array, index, lastResultBoxed, array]
             visitor.visitInsn(Opcodes.POP); // [...results, index, array, index, lastResultBoxed]
             visitor.visitInsn(Opcodes.AASTORE); // [...results, index]
@@ -376,16 +376,16 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
 
         // Return the array
-        visitor.visitVarInsn(Opcodes.ALOAD, code.nextLocalSlot());
+        visitor.visitVarInsn(Opcodes.ALOAD, abstractStack.nextLocalSlot());
         visitor.visitInsn(Opcodes.ARETURN);
     }
 
     @Override public Void visitEnd(Instruction.End inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new IllegalStateException("Should never happen? \"End\" is just a marker instruction!");
     }
 
     @Override public Void visitElse(Instruction.Else inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new IllegalStateException("Should never happen? \"Else\" is just a marker instruction!");
     }
 
     // Throw a runtime error
@@ -852,19 +852,19 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                     incrementInstructions((funcType.args.size() - 2) / 4);
                 }
                 // Store the handle as a local:
-                visitor.visitVarInsn(Opcodes.ASTORE, code.nextLocalSlot()); // Store handle as local
+                visitor.visitVarInsn(Opcodes.ASTORE, abstractStack.nextLocalSlot()); // Store handle as local
                 // Store excess locals:
                 int paramIndex = funcType.args.size() - 1;
                 int localOffset = 1;
                 while (stackSlotSum > 2) {
-                    BytecodeHelper.storeLocal(visitor, code.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
+                    BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
                     int stackSlotChange = funcType.args.get(paramIndex).stackSlots();
                     paramIndex--;
                     localOffset += stackSlotChange;
                     stackSlotSum -= stackSlotChange;
                 }
                 // Move the method handle down
-                visitor.visitVarInsn(Opcodes.ALOAD, code.nextLocalSlot()); // Load handle from local
+                visitor.visitVarInsn(Opcodes.ALOAD, abstractStack.nextLocalSlot()); // Load handle from local
                 switch (stackSlotSum) {
                     case 0 -> {} // Nothing happens
                     case 1 -> visitor.visitInsn(Opcodes.SWAP);
@@ -876,7 +876,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                     paramIndex++;
                     int stackSlotChange = funcType.args.get(paramIndex).stackSlots();
                     localOffset -= stackSlotChange;
-                    BytecodeHelper.loadLocal(visitor, code.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
+                    BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
                 }
             }
         }
@@ -998,7 +998,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitSelectFrom(Instruction.SelectFrom inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("SelectFrom instruction not yet implemented");
     }
 
     @Override public Void visitLocalGet(Instruction.LocalGet inst) {
@@ -1173,55 +1173,59 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitTableInit(Instruction.TableInit inst) {
-        abstractStack.applyStackType(inst.stackType());
-        // Stack = [dest, src, count]
-
-        // Verify args:
-        // Ensure count > 0:
-        visitor.visitInsn(Opcodes.DUP);
-        Label okay = new Label();
-        visitor.visitJumpInsn(Opcodes.IFGE, okay);
-        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call table.init with \"count\" above i32_max. WasmJ doesn't support this!");
-        visitor.visitLabel(okay);
-
-        // Apply instruction penalty equal to "count", for the arraycopy.
-        if (limiter.countsInstructions) {
-            visitor.visitInsn(Opcodes.DUP); // [dest, src, count, count]
-            visitor.visitInsn(Opcodes.I2L); // [dest, src, count, (long) count]
-            incrementInstructionsByTopElement(); // [dest, src, count]
-        }
-
-        ValType elementType = module.tables.get(inst.tableIndex()).elementType();
-        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
-        // Shuffle things around to get them in order for the arraycopy() call:
-        visitor.visitVarInsn(Opcodes.ISTORE, code.nextLocalSlot()); // nextLocal = count, [dest, src]
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor); // [dest, src, elem array]
-        visitor.visitInsn(Opcodes.DUP_X2); // [elem array, dest, src, elem array]
-        visitor.visitInsn(Opcodes.POP); // [elem array, dest, src]
-        visitor.visitInsn(Opcodes.SWAP); // [elem array, src, dest]
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getTableName(inst.tableIndex()), tableDescriptor); // [elem array, src, dest, table array]
-        visitor.visitInsn(Opcodes.SWAP); // [elem array, src, table array, dest]
-        visitor.visitVarInsn(Opcodes.ILOAD, code.nextLocalSlot()); // [elems, src, table, dest, count]
-        // Call arraycopy():
-        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false);
-        // Stack is now empty.
-        return null;
+        throw new UnsupportedOperationException("Table.init not yet implemented");
+        // TODO: Impl below doesn't deal with refcounts
+//        abstractStack.applyStackType(inst.stackType());
+//        // Stack = [dest, src, count]
+//
+//        // Verify args:
+//        // Ensure count > 0:
+//        visitor.visitInsn(Opcodes.DUP);
+//        Label okay = new Label();
+//        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+//        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call table.init with \"count\" above i32_max. WasmJ doesn't support this!");
+//        visitor.visitLabel(okay);
+//
+//        // Apply instruction penalty equal to "count", for the arraycopy.
+//        if (limiter.countsInstructions) {
+//            visitor.visitInsn(Opcodes.DUP); // [dest, src, count, count]
+//            visitor.visitInsn(Opcodes.I2L); // [dest, src, count, (long) count]
+//            incrementInstructionsByTopElement(); // [dest, src, count]
+//        }
+//
+//        ValType elementType = module.tables.get(inst.tableIndex()).elementType();
+//        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+//        // Shuffle things around to get them in order for the arraycopy() call:
+//        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot()); // nextLocal = count, [dest, src]
+//        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor); // [dest, src, elem array]
+//        visitor.visitInsn(Opcodes.DUP_X2); // [elem array, dest, src, elem array]
+//        visitor.visitInsn(Opcodes.POP); // [elem array, dest, src]
+//        visitor.visitInsn(Opcodes.SWAP); // [elem array, src, dest]
+//        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getTableName(inst.tableIndex()), tableDescriptor); // [elem array, src, dest, table array]
+//        visitor.visitInsn(Opcodes.SWAP); // [elem array, src, table array, dest]
+//        visitor.visitVarInsn(Opcodes.ILOAD, abstractStack.nextLocalSlot()); // [elems, src, table, dest, count]
+//        // Call arraycopy():
+//        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false);
+//        // Stack is now empty.
+//        return null;
     }
 
     @Override public Void visitElemDrop(Instruction.ElemDrop inst) {
-        abstractStack.applyStackType(inst.stackType());
-        // Decrement memory counter, if needed:
-        if (limiter.countsMemory) {
-            long len = module.elements.get(inst.elemIndex()).exprs().size();
-            BytecodeHelper.constLong(visitor, len * 8L);
-            decrementMemoryByTopElement();
-        }
-        // Set the given elem field to null, freeing the memory.
-        visitor.visitInsn(Opcodes.ACONST_NULL);
-        ValType elementType = module.elements.get(inst.elemIndex()).type();
-        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
-        visitor.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor);
-        return null;
+        throw new UnsupportedOperationException("Elem.drop not yet implemented");
+        // TODO: Impl below doesn't deal with refcounts
+//        abstractStack.applyStackType(inst.stackType());
+//        // Decrement memory counter, if needed:
+//        if (limiter.countsMemory) {
+//            long len = module.elements.get(inst.elemIndex()).exprs().size();
+//            BytecodeHelper.constLong(visitor, len * 8L);
+//            decrementMemoryByTopElement();
+//        }
+//        // Set the given elem field to null, freeing the memory.
+//        visitor.visitInsn(Opcodes.ACONST_NULL);
+//        ValType elementType = module.elements.get(inst.elemIndex()).type();
+//        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+//        visitor.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor);
+//        return null;
     }
 
     @Override public Void visitTableGrow(Instruction.TableGrow inst) {
@@ -1305,11 +1309,11 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitTableCopy(Instruction.TableCopy inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("Table.copy not yet implemented");
     }
 
     @Override public Void visitTableFill(Instruction.TableFill inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("Table.fill not yet implemented");
     }
 
     // Will need to change memIndex in the future if multiple memories are implemented
@@ -1599,14 +1603,14 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
 
         // Shuffle things around to get them in order for the arraycopy() call:
-        visitor.visitVarInsn(Opcodes.ISTORE, code.nextLocalSlot()); // nextLocal = count, [dest, src]
+        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot()); // nextLocal = count, [dest, src]
         visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getDataFieldName(inst.dataIndex()), "[B"); // [dest, src, data array]
         visitor.visitInsn(Opcodes.DUP_X2); // [data array, dest, src, data array]
         visitor.visitInsn(Opcodes.POP); // [data array, dest, src]
         visitor.visitInsn(Opcodes.SWAP); // [data array, src, dest]
         pushMemory(0); // [data array, src, dest, mem array]
         visitor.visitInsn(Opcodes.SWAP); // [data array, src, mem array, dest]
-        visitor.visitVarInsn(Opcodes.ILOAD, code.nextLocalSlot()); // [data, src, mem, dest, count]
+        visitor.visitVarInsn(Opcodes.ILOAD, abstractStack.nextLocalSlot()); // [data, src, mem, dest, count]
         // Call arraycopy():
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false);
         // Stack is now empty.
@@ -1626,10 +1630,70 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         return null;
     }
     @Override public Void visitMemoryCopy(Instruction.MemoryCopy inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        // Stack = [dest, src, count]
+        abstractStack.applyStackType(inst.stackType());
+
+        // If count is negative, error
+        visitor.visitInsn(Opcodes.DUP);
+        Label okay = new Label();
+        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call memory.copy with \"count\" above i32_max. WasmJ doesn't support this!");
+        visitor.visitLabel(okay);
+
+        // Apply instruction penalty equal to "count / 8", for the arraycopy.
+        if (limiter.countsInstructions) {
+            visitor.visitInsn(Opcodes.DUP); // [dest, src, count, count]
+            BytecodeHelper.constInt(visitor, 8); // [dest, src, count, count, 8]
+            visitor.visitInsn(Opcodes.IDIV); // [dest, src, count, count / 8]
+            visitor.visitInsn(Opcodes.I2L);
+            incrementInstructionsByTopElement(); // [dest, src, count]
+        }
+
+        // Shuffle things around to get them in order for the arraycopy() call:
+        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot()); // nextLocal = count, [dest, src]
+        visitor.visitInsn(Opcodes.SWAP); // [src, dest]
+        pushMemory(0); // [src, dest, array]
+        visitor.visitInsn(Opcodes.DUP_X2); // [array, src, dest, array]
+        visitor.visitInsn(Opcodes.SWAP); // [array, src, array, dest]
+        visitor.visitVarInsn(Opcodes.ILOAD, abstractStack.nextLocalSlot()); // [array, src, array, dest, count]
+        // Call arraycopy():
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false);
+        // Stack is now empty.
+        return null;
     }
     @Override public Void visitMemoryFill(Instruction.MemoryFill inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        // Stack = [dest, value, count] // all i32s
+        abstractStack.applyStackType(inst.stackType());
+
+        // If count is negative, error
+        visitor.visitInsn(Opcodes.DUP);
+        Label okay = new Label();
+        visitor.visitJumpInsn(Opcodes.IFGE, okay);
+        BytecodeHelper.throwRuntimeError(visitor, "Attempt to call memory.fill with \"count\" above i32_max. WasmJ doesn't support this!");
+        visitor.visitLabel(okay);
+
+        // Apply instruction penalty equal to "count / 8", for the array fill.
+        if (limiter.countsInstructions) {
+            visitor.visitInsn(Opcodes.DUP); // [dest, src, count, count]
+            BytecodeHelper.constInt(visitor, 8); // [dest, src, count, count, 8]
+            visitor.visitInsn(Opcodes.IDIV); // [dest, src, count, count / 8]
+            visitor.visitInsn(Opcodes.I2L);
+            incrementInstructionsByTopElement(); // [dest, src, count]
+        }
+
+        // Get args set up for an "Arrays.fill(arr, from, to, val)" call:
+        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot()); // nextLocal = count, [dest, value]
+        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot() + 1); // nextLocal = count, nextLocal+1 = value, [dest]
+        pushMemory(0); // [dest, arr]
+        visitor.visitInsn(Opcodes.SWAP); // [arr, dest]
+        visitor.visitInsn(Opcodes.DUP); // [arr, dest, dest]
+        visitor.visitVarInsn(Opcodes.ILOAD, abstractStack.nextLocalSlot()); // [arr, dest, dest, count]
+        visitor.visitInsn(Opcodes.IADD); // [arr, dest, dest + count]
+        visitor.visitVarInsn(Opcodes.ILOAD, abstractStack.nextLocalSlot() + 1); // [arr, dest, dest + count, value]
+        // Call fill():
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Arrays.class), "fill", "([BIIB)V", false); // []
+        // Stack now empty
+        return null;
     }
 
     @Override public Void visitI32Const(Instruction.I32Const inst) {
@@ -2504,947 +2568,947 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitV128Load(Instruction.V128Load inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load8x8S(Instruction.V128Load8x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load8x8U(Instruction.V128Load8x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load16x4S(Instruction.V128Load16x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load16x4U(Instruction.V128Load16x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load32x2S(Instruction.V128Load32x2S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load32x2U(Instruction.V128Load32x2U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load8Splat(Instruction.V128Load8Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load16Splat(Instruction.V128Load16Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load32Splat(Instruction.V128Load32Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load64Splat(Instruction.V128Load64Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load32Zero(Instruction.V128Load32Zero inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load64Zero(Instruction.V128Load64Zero inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Store(Instruction.V128Store inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load8Lane(Instruction.V128Load8Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load16Lane(Instruction.V128Load16Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load32Lane(Instruction.V128Load32Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Load64Lane(Instruction.V128Load64Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Store8Lane(Instruction.V128Store8Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Store16Lane(Instruction.V128Store16Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Store32Lane(Instruction.V128Store32Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Store64Lane(Instruction.V128Store64Lane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Const(Instruction.V128Const inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Shuffle(Instruction.I8x16Shuffle inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16ExtractLaneS(Instruction.I8x16ExtractLaneS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16ExtractLaneU(Instruction.I8x16ExtractLaneU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16ReplaceLane(Instruction.I8x16ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtractLaneS(Instruction.I16x8ExtractLaneS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtractLaneU(Instruction.I16x8ExtractLaneU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ReplaceLane(Instruction.I16x8ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtractLane(Instruction.I32x4ExtractLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ReplaceLane(Instruction.I32x4ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtractLane(Instruction.I64x2ExtractLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ReplaceLane(Instruction.I64x2ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4ExtractLane(Instruction.F32x4ExtractLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4ReplaceLane(Instruction.F32x4ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2ExtractLane(Instruction.F64x2ExtractLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2ReplaceLane(Instruction.F64x2ReplaceLane inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Swizzle(Instruction.I8x16Swizzle inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Splat(Instruction.I8x16Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Splat(Instruction.I16x8Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Splat(Instruction.I32x4Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Splat(Instruction.I64x2Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Splat(Instruction.F32x4Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Splat(Instruction.F64x2Splat inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Eq(Instruction.I8x16Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Ne(Instruction.I8x16Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16LtS(Instruction.I8x16LtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16LtU(Instruction.I8x16LtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16GtS(Instruction.I8x16GtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16GtU(Instruction.I8x16GtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16LeS(Instruction.I8x16LeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16LeU(Instruction.I8x16LeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16GeS(Instruction.I8x16GeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16GeU(Instruction.I8x16GeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Eq(Instruction.I16x8Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Ne(Instruction.I16x8Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8LtS(Instruction.I16x8LtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8LtU(Instruction.I16x8LtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8GtS(Instruction.I16x8GtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8GtU(Instruction.I16x8GtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8LeS(Instruction.I16x8LeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8LeU(Instruction.I16x8LeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8GeS(Instruction.I16x8GeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8GeU(Instruction.I16x8GeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Eq(Instruction.I32x4Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Ne(Instruction.I32x4Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4LtS(Instruction.I32x4LtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4LtU(Instruction.I32x4LtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4GtS(Instruction.I32x4GtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4GtU(Instruction.I32x4GtU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4LeS(Instruction.I32x4LeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4LeU(Instruction.I32x4LeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4GeS(Instruction.I32x4GeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4GeU(Instruction.I32x4GeU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Eq(Instruction.I64x2Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Ne(Instruction.I64x2Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2LtS(Instruction.I64x2LtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2GtS(Instruction.I64x2GtS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2LeS(Instruction.I64x2LeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2GeS(Instruction.I64x2GeS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Eq(Instruction.F32x4Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Ne(Instruction.F32x4Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Lt(Instruction.F32x4Lt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Gt(Instruction.F32x4Gt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Le(Instruction.F32x4Le inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Ge(Instruction.F32x4Ge inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Eq(Instruction.F64x2Eq inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Ne(Instruction.F64x2Ne inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Lt(Instruction.F64x2Lt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Gt(Instruction.F64x2Gt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Le(Instruction.F64x2Le inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Ge(Instruction.F64x2Ge inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Not(Instruction.V128Not inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128And(Instruction.V128And inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128AndNot(Instruction.V128AndNot inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Or(Instruction.V128Or inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Xor(Instruction.V128Xor inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128Bitselect(Instruction.V128Bitselect inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitV128AnyTrue(Instruction.V128AnyTrue inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Abs(Instruction.I8x16Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Neg(Instruction.I8x16Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16PopCnt(Instruction.I8x16PopCnt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16AllTrue(Instruction.I8x16AllTrue inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Bitmask(Instruction.I8x16Bitmask inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16NarrowI16x8S(Instruction.I8x16NarrowI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16NarrowI16x8U(Instruction.I8x16NarrowI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Shl(Instruction.I8x16Shl inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16ShrS(Instruction.I8x16ShrS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16ShrU(Instruction.I8x16ShrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Add(Instruction.I8x16Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16AddSatS(Instruction.I8x16AddSatS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16AddSatU(Instruction.I8x16AddSatU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16Sub(Instruction.I8x16Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16SubSatS(Instruction.I8x16SubSatS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16SubSatU(Instruction.I8x16SubSatU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16MinS(Instruction.I8x16MinS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16MinU(Instruction.I8x16MinU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16MaxS(Instruction.I8x16MaxS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16MaxU(Instruction.I8x16MaxU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI8x16AvgrU(Instruction.I8x16AvgrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtAddPairwiseI8x16S(Instruction.I16x8ExtAddPairwiseI8x16S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtAddPairwiseI8x16U(Instruction.I16x8ExtAddPairwiseI8x16U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Abs(Instruction.I16x8Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Neg(Instruction.I16x8Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Q15MulrSatS(Instruction.I16x8Q15MulrSatS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8AllTrue(Instruction.I16x8AllTrue inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Bitmask(Instruction.I16x8Bitmask inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8NarrowI32x4S(Instruction.I16x8NarrowI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8NarrowI32x4U(Instruction.I16x8NarrowI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtendLowI8x16S(Instruction.I16x8ExtendLowI8x16S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtendHighI8x16S(Instruction.I16x8ExtendHighI8x16S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtendLowI8x16U(Instruction.I16x8ExtendLowI8x16U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtendHighI8x16U(Instruction.I16x8ExtendHighI8x16U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Shl(Instruction.I16x8Shl inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ShrS(Instruction.I16x8ShrS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ShrU(Instruction.I16x8ShrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Add(Instruction.I16x8Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8AddSatS(Instruction.I16x8AddSatS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8AddSatU(Instruction.I16x8AddSatU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Sub(Instruction.I16x8Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8SubSatS(Instruction.I16x8SubSatS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8SubSatU(Instruction.I16x8SubSatU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8Mul(Instruction.I16x8Mul inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8MinS(Instruction.I16x8MinS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8MinU(Instruction.I16x8MinU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8MaxS(Instruction.I16x8MaxS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8MaxU(Instruction.I16x8MaxU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8AvgrU(Instruction.I16x8AvgrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtMulLowI8x16S(Instruction.I16x8ExtMulLowI8x16S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtMulHighI8x16S(Instruction.I16x8ExtMulHighI8x16S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtMulLowI8x16U(Instruction.I16x8ExtMulLowI8x16U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI16x8ExtMulHighI8x16U(Instruction.I16x8ExtMulHighI8x16U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtAddPairwiseI16x8S(Instruction.I32x4ExtAddPairwiseI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtAddPairwiseI16x8U(Instruction.I32x4ExtAddPairwiseI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Abs(Instruction.I32x4Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Neg(Instruction.I32x4Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4AllTrue(Instruction.I32x4AllTrue inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Bitmask(Instruction.I32x4Bitmask inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtendLowI16x8S(Instruction.I32x4ExtendLowI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtendHighI16x8S(Instruction.I32x4ExtendHighI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtendLowI16x8U(Instruction.I32x4ExtendLowI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtendHighI16x8U(Instruction.I32x4ExtendHighI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Shl(Instruction.I32x4Shl inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ShrS(Instruction.I32x4ShrS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ShrU(Instruction.I32x4ShrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Add(Instruction.I32x4Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Sub(Instruction.I32x4Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4Mul(Instruction.I32x4Mul inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4MinS(Instruction.I32x4MinS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4MinU(Instruction.I32x4MinU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4MaxS(Instruction.I32x4MaxS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4MaxU(Instruction.I32x4MaxU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4DotI16x8S(Instruction.I32x4DotI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtMulLowI16x8S(Instruction.I32x4ExtMulLowI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtMulHighI16x8S(Instruction.I32x4ExtMulHighI16x8S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtMulLowI16x8U(Instruction.I32x4ExtMulLowI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4ExtMulHighI16x8U(Instruction.I32x4ExtMulHighI16x8U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Abs(Instruction.I64x2Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Neg(Instruction.I64x2Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2AllTrue(Instruction.I64x2AllTrue inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Bitmask(Instruction.I64x2Bitmask inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtendLowI32x4S(Instruction.I64x2ExtendLowI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtendHighI32x4S(Instruction.I64x2ExtendHighI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtendLowI32x4U(Instruction.I64x2ExtendLowI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtendHighI32x4U(Instruction.I64x2ExtendHighI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Shl(Instruction.I64x2Shl inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ShrS(Instruction.I64x2ShrS inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ShrU(Instruction.I64x2ShrU inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Add(Instruction.I64x2Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Sub(Instruction.I64x2Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2Mul(Instruction.I64x2Mul inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtMulLowI32x4S(Instruction.I64x2ExtMulLowI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtMulHighI32x4S(Instruction.I64x2ExtMulHighI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtMulLowI32x4U(Instruction.I64x2ExtMulLowI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI64x2ExtMulHighI32x4U(Instruction.I64x2ExtMulHighI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Ceil(Instruction.F32x4Ceil inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Floor(Instruction.F32x4Floor inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Trunc(Instruction.F32x4Trunc inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Nearest(Instruction.F32x4Nearest inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Abs(Instruction.F32x4Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Neg(Instruction.F32x4Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Sqrt(Instruction.F32x4Sqrt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Add(Instruction.F32x4Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Sub(Instruction.F32x4Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Mul(Instruction.F32x4Mul inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Div(Instruction.F32x4Div inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Min(Instruction.F32x4Min inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4Max(Instruction.F32x4Max inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4PMin(Instruction.F32x4PMin inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4PMax(Instruction.F32x4PMax inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Ceil(Instruction.F64x2Ceil inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Floor(Instruction.F64x2Floor inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Trunc(Instruction.F64x2Trunc inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Nearest(Instruction.F64x2Nearest inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Abs(Instruction.F64x2Abs inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Neg(Instruction.F64x2Neg inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Sqrt(Instruction.F64x2Sqrt inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Add(Instruction.F64x2Add inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Sub(Instruction.F64x2Sub inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Mul(Instruction.F64x2Mul inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Div(Instruction.F64x2Div inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Min(Instruction.F64x2Min inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2Max(Instruction.F64x2Max inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2PMin(Instruction.F64x2PMin inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2PMax(Instruction.F64x2PMax inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4TruncSatF32x4S(Instruction.I32x4TruncSatF32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4TruncSatF32x4U(Instruction.I32x4TruncSatF32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4ConvertI32x4S(Instruction.F32x4ConvertI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4ConvertI32x4U(Instruction.F32x4ConvertI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4TruncSatF64x2SZero(Instruction.I32x4TruncSatF64x2SZero inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitI32x4TruncSatF64x2UZero(Instruction.I32x4TruncSatF64x2UZero inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2ConvertLowI32x4S(Instruction.F64x2ConvertLowI32x4S inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2ConvertLowI32x4U(Instruction.F64x2ConvertLowI32x4U inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF32x4DemoteF64x2Zero(Instruction.F32x4DemoteF64x2Zero inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
     @Override public Void visitF64x2PromoteLowF32x4(Instruction.F64x2PromoteLowF32x4 inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("WasmJ does not implement SIMD operations! (yet?)");
     }
 
 }

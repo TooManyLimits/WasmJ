@@ -170,12 +170,12 @@ public class CostCountingVisitor extends InstructionVisitor<Long> {
 
     @Override
     public Long visitTableCopy(Instruction.TableCopy inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("Table.copy not yet implemented");
     }
 
     @Override
     public Long visitTableFill(Instruction.TableFill inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("Table.fill not yet implemented");
     }
 
     @Override
@@ -303,28 +303,29 @@ public class CostCountingVisitor extends InstructionVisitor<Long> {
         // Memory and table grows require a bit of extra context, because
         // of the arbitrary amount of object/byte copying that happens.
         // This is just a base cost, that extra cost is added by the
-        // MethodWritingVisitor when necessary.
+        // MethodWritingVisitor when necessary. Similar is true for
+        // things like memory.init and memory.copy.
         return 5L;
     }
 
     @Override
     public Long visitMemoryInit(Instruction.MemoryInit inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return 3L;
     }
 
     @Override
     public Long visitDataDrop(Instruction.DataDrop inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return 1L;
     }
 
     @Override
     public Long visitMemoryCopy(Instruction.MemoryCopy inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return 3L;
     }
 
     @Override
     public Long visitMemoryFill(Instruction.MemoryFill inst) {
-        throw new UnsupportedOperationException("Not yet implemented");
+        return 3L;
     }
 
     @Override

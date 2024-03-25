@@ -42,7 +42,6 @@ public class Compile {
     public static String getLimiterName() { return "limiter"; }
     public static String getInitMethodName() { return "WasmJ_Init"; }
 
-
     // Skip boolean, wasm doesn't use it, and byte, since can't make a var handle of it
     private static final Class<?>[] primitives = new Class[] { short.class, int.class, long.class, float.class, double.class };
     public static String getMemoryName(int index) { return "memory_" + index; }
@@ -289,7 +288,7 @@ public class Compile {
                 BytecodeHelper.constLong(init, initialSize); // [limiter, initialSize]
                 init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
             }
-            // Create the field
+            // Fill in the field
             init.visitLdcInsn(limits.min() * WASM_PAGE_SIZE);
             init.visitIntInsn(Opcodes.NEWARRAY, Opcodes.T_BYTE);
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getMemoryName(index), "[B");
@@ -432,11 +431,11 @@ public class Compile {
             // After this if-else, we're going to want an array on the stack, followed by an index.
             Code temp = new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), null);
             MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, temp, null, init);
-
             String descriptor = elem.type() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+            boolean isActive = elem.mode() instanceof Element.Mode.Active;
 
             // If it's not active, increment memory usage and create a field:
-            if (!(elem.mode() instanceof Element.Mode.Active activeMode)) {
+            if (!isActive) {
                 // Increment memory usage by the array's size:
                 if (limiter.countsMemory) {
                     // Increment memory use by the array size
@@ -453,12 +452,19 @@ public class Compile {
                 init.visitInsn(Opcodes.ICONST_0); // [arr, 0]. Array + index are on stack.
             } else {
                 // This is an active array. Put the table directly on the stack, then compute the offset.
+                Element.Mode.Active activeMode = (Element.Mode.Active) elem.mode();
                 init.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getTableName(activeMode.tableIndex()), descriptor); // Stack = [table]
                 instVisitor.visitExpr(activeMode.offset()); // [table, index]
             }
 
             // Now, repeat for each expression: compute it and store in the array, then increment index.
             for (Expression expr : elem.exprs()) {
+                // If needed, decrement the refcount of the element previously in this slot:
+                if (limiter.countsMemory && isActive) {
+                    init.visitInsn(Opcodes.DUP2); // [table, index, table, index]
+                    init.visitInsn(Opcodes.AALOAD); // [table, index, table[index]]
+                    instVisitor.decrementRefCountOfTopElement(); // [table, index]
+                }
                 init.visitInsn(Opcodes.DUP2); // [table, index, table, index]
                 instVisitor.visitExpr(expr); // Evaluate the expression. Stack = [table, index, table, index, element]
                 init.visitInsn(Opcodes.AASTORE); // [table, index]
