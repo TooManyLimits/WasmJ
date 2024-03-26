@@ -8,7 +8,7 @@ java.sourceCompatibility = JavaVersion.VERSION_17
 java.targetCompatibility = JavaVersion.VERSION_17
 
 group = "io.github.toomanylimits"
-version = "0.1.0"
+version = "0.0.1"
 description = "WasmJ"
 
 repositories {
