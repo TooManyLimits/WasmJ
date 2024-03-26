@@ -14,6 +14,7 @@ import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 
+import java.lang.annotation.ElementType;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -302,6 +303,46 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Store in the field
             int adjustedIndex = memIndex - module.memImports().size();
             visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getMemoryName(adjustedIndex), "[B");
+        }
+    }
+
+    // Same as above but for tables
+    private void pushTable(int tableIndex, boolean isFuncRef) {
+        String descriptor = (isFuncRef ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR);
+        if (tableIndex < module.tableImports().size()) {
+            Import.Table tableImport = module.tableImports().get(tableIndex);
+            if (javaModules.containsKey(tableImport.moduleName))
+                throw new UnsupportedOperationException("Cannot import tables from java modules");
+            else {
+                // Call the getter
+                String className = Compile.getClassName(tableImport.moduleName);
+                String methodName = Compile.getExportedTableGetterName(tableImport.elementName); // Getter!
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, "()" + descriptor, false); // Call it
+            }
+        } else {
+            // Fetch the field
+            int adjustedIndex = tableIndex - module.tableImports().size();
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(adjustedIndex), descriptor);
+        }
+    }
+    // Takes the top element of the stack, a table array, and replaces the table at the given index with it.
+    // Handles imports.
+    private void storeTable(int tableIndex, boolean isFuncRef) {
+        String descriptor = (isFuncRef ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR);
+        if (tableIndex < module.tableImports().size()) {
+            Import.Table tableImport = module.tableImports().get(tableIndex);
+            if (javaModules.containsKey(tableImport.moduleName))
+                throw new UnsupportedOperationException("Cannot import tables from java modules");
+            else {
+                // Call the setter
+                String className = Compile.getClassName(tableImport.moduleName);
+                String methodName = Compile.getExportedTableSetterName(tableImport.elementName); // Setter!
+                visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, "(" + descriptor + ")V", false); // Call it
+            }
+        } else {
+            // Store in the field
+            int adjustedIndex = tableIndex - module.tableImports().size();
+            visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getTableName(adjustedIndex), descriptor);
         }
     }
 
@@ -1110,65 +1151,70 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitTableGet(Instruction.TableGet inst) {
         BytecodeHelper.debugPrintln(visitor, "Table get");
+
+        ValType elemType;
         if (inst.tableIndex() < module.tableImports().size()) {
-            throw new UnsupportedOperationException("Table imports not yet implemented");
+            elemType = module.tableImports().get(inst.tableIndex()).type.elementType();
         } else {
-            int adjustedIndex = inst.tableIndex() - module.tableImports().size();
-            abstractStack.popExpecting(ValType.i32);
-            ValType elementType = module.tables.get(adjustedIndex).elementType();
-            String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
-
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(adjustedIndex), tableDescriptor);
-            visitor.visitInsn(Opcodes.SWAP);
-            visitor.visitInsn(Opcodes.AALOAD);
-
-            if (limiter.countsMemory) {
-                // It's always a reftype, let's track it for refcounting
-                int nextSlot = abstractStack.nextLocalSlot();
-                abstractStack.push(new AbstractStackElement.ValueElement(elementType, nextSlot));
-                // Duplicate it and increment, then dup and store in next slot
-                visitor.visitInsn(Opcodes.DUP);
-                BytecodeHelper.debugPrintln(visitor, "IncRefCount - table get");
-                incrementRefCountOfTopElement();
-                visitor.visitInsn(Opcodes.DUP);
-                BytecodeHelper.storeLocal(visitor, nextSlot, elementType);
-            } else {
-                // Just push normally
-                abstractStack.push(new AbstractStackElement.ValueElement(elementType, -1));
-            }
+            elemType = module.tables.get(inst.tableIndex() - module.tableImports().size()).elementType();
         }
+
+        abstractStack.popExpecting(ValType.i32);
+
+        // Stack = [index]
+        pushTable(inst.tableIndex(), elemType == ValType.funcref); // [index, table]
+        visitor.visitInsn(Opcodes.SWAP); // [table, index]
+        visitor.visitInsn(Opcodes.AALOAD); // [table[index]]
+
+        if (limiter.countsMemory) {
+            // It's always a reftype, let's track it for refcounting
+            int nextSlot = abstractStack.nextLocalSlot();
+            abstractStack.push(new AbstractStackElement.ValueElement(elemType, nextSlot));
+            // Duplicate it and increment, then dup and store in next slot
+            visitor.visitInsn(Opcodes.DUP);
+            BytecodeHelper.debugPrintln(visitor, "IncRefCount - table get");
+            incrementRefCountOfTopElement();
+            visitor.visitInsn(Opcodes.DUP);
+            BytecodeHelper.storeLocal(visitor, nextSlot, elemType);
+        } else {
+            // Just push normally
+            abstractStack.push(new AbstractStackElement.ValueElement(elemType, -1));
+        }
+
         return null;
     }
 
     @Override public Void visitTableSet(Instruction.TableSet inst) {
         BytecodeHelper.debugPrintln(visitor, "Table set");
+
+        ValType elemType;
         if (inst.tableIndex() < module.tableImports().size()) {
-            throw new UnsupportedOperationException("Table imports not yet implemented");
+            elemType = module.tableImports().get(inst.tableIndex()).type.elementType();
         } else {
-            int adjustedIndex = inst.tableIndex() - module.tableImports().size();
-            ValType elementType = module.tables.get(adjustedIndex).elementType();
-            abstractStack.popExpecting(elementType);
-            abstractStack.popExpecting(ValType.i32);
-
-            // [index, elem]
-            String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(adjustedIndex), tableDescriptor); // [index, elem, table]
-            visitor.visitInsn(Opcodes.DUP_X2); // [table, index, elem, table]
-            visitor.visitInsn(Opcodes.POP); // [table, index, elem]
-
-            // If refcounting, decrement the count of the object previously in the table
-            if (limiter.countsMemory) {
-                int nextLocal = abstractStack.nextLocalSlot();
-                BytecodeHelper.storeLocal(visitor, nextLocal, elementType); // [table, index], locals = [elem]
-                visitor.visitInsn(Opcodes.DUP2); // [table, index, table, index], locals = [elem]
-                visitor.visitInsn(Opcodes.AALOAD); // [table, index, table[index]], locals = [elem]
-                BytecodeHelper.debugPrintln(visitor, "DecRefCount - table set");
-                decrementRefCountOfTopElement(); // [table, index], locals = [elem]
-                BytecodeHelper.loadLocal(visitor, nextLocal, elementType); // [table, index, elem]
-            }
-
-            visitor.visitInsn(Opcodes.AASTORE); // []
+            elemType = module.tables.get(inst.tableIndex() - module.tableImports().size()).elementType();
         }
+
+        abstractStack.popExpecting(elemType);
+        abstractStack.popExpecting(ValType.i32);
+
+        // [index, elem]
+        pushTable(inst.tableIndex(), elemType == ValType.funcref); // [index, elem, table]
+        visitor.visitInsn(Opcodes.DUP_X2); // [table, index, elem, table]
+        visitor.visitInsn(Opcodes.POP); // [table, index, elem]
+
+        // If refcounting, decrement the count of the object previously in the table
+        if (limiter.countsMemory) {
+            int nextLocal = abstractStack.nextLocalSlot();
+            BytecodeHelper.storeLocal(visitor, nextLocal, elemType); // [table, index], locals = [elem]
+            visitor.visitInsn(Opcodes.DUP2); // [table, index, table, index], locals = [elem]
+            visitor.visitInsn(Opcodes.AALOAD); // [table, index, table[index]], locals = [elem]
+            BytecodeHelper.debugPrintln(visitor, "DecRefCount - table set");
+            decrementRefCountOfTopElement(); // [table, index], locals = [elem]
+            BytecodeHelper.loadLocal(visitor, nextLocal, elemType); // [table, index, elem]
+        }
+
+        visitor.visitInsn(Opcodes.AASTORE); // []
+
         return null;
     }
 
@@ -1246,13 +1292,12 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         ValType elementType = module.tables.get(inst.tableIndex()).elementType();
         String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 
-
         // If counting instructions, then increment instruction counter by
         // currentSize + requestedEntries. This is to pay for the arraycopy + fill.
         if (limiter.countsInstructions) {
             // [fillValue, requestedEntries]
             visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, requestedEntries]
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), tableDescriptor); // [fillValue, requestedEntries, requestedEntries, table]
+            pushTable(inst.tableIndex(), elementType == ValType.funcref); // [fillValue, requestedEntries, requestedEntries, table]
             visitor.visitInsn(Opcodes.ARRAYLENGTH); // [fillValue, requestedEntries, requestedEntries, table.length]
             visitor.visitInsn(Opcodes.IADD); // [fillValue, requestedEntries, requestedEntries + table.length]
             visitor.visitInsn(Opcodes.I2L); // [fillValue, requestedEntries, (long) (requestedEntries + table.length)]
@@ -1269,7 +1314,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
 
         // Stack = [fillValue, requestedEntries]
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), tableDescriptor); // [fillValue, requestedEntries, table]
+        pushTable(inst.tableIndex(), elementType == ValType.funcref); // [fillValue, requestedEntries, table]
         visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, table, table]
         visitor.visitInsn(Opcodes.ARRAYLENGTH); // [fillValue, requestedEntries, table, table.length]
         BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [fillValue, requestedEntries, table]. Locals = [table.length]
@@ -1287,7 +1332,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [fillValue, newTable, table, 0, newTable, 0, table.length]
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false); // [fillValue, newTable]
         visitor.visitInsn(Opcodes.DUP_X1); // [newTable, fillValue, newTable]
-        visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), tableDescriptor); // [newTable, fillValue]
+        storeTable(inst.tableIndex(), elementType == ValType.funcref); // [newTable, fillValue]
         BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [newTable, fillValue, table.length]
         visitor.visitInsn(Opcodes.SWAP); // [newTable, table.length, fillValue]
         BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + 1, ValType.i32); // [newTable, table.length, fillValue, newTableLength]
@@ -1301,10 +1346,8 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         abstractStack.applyStackType(inst.stackType());
 
         ValType elementType = module.tables.get(inst.tableIndex()).elementType();
-        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
-
-        visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getTableName(inst.tableIndex()), tableDescriptor);
-        visitor.visitInsn(Opcodes.ARRAYLENGTH);
+        pushTable(inst.tableIndex(), elementType == ValType.funcref); // [table]
+        visitor.visitInsn(Opcodes.ARRAYLENGTH); // [table.length]
         return null;
     }
 

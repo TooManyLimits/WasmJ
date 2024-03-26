@@ -36,6 +36,8 @@ public class Compile {
     public static String getWasmExportFuncName(String exportName) { return "wasm_export_func_" + exportName; }
     public static String getExportedMemGetterName(String exportName) { return "get_exported_mem_" + exportName; }
     public static String getExportedMemSetterName(String exportName) { return "set_exported_mem_" + exportName; }
+    public static String getExportedTableGetterName(String exportName) { return "get_exported_table_" + exportName; }
+    public static String getExportedTableSetterName(String exportName) { return "set_exported_table_" + exportName; }
 
 
     // Get the name of the limiter field
@@ -61,15 +63,19 @@ public class Compile {
         String className = getClassName(moduleName);
         writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 
+        // Functions and glue
         emitFunctions(writer, javaModules, limiter, moduleName, module);
         emitGlueFunctions(writer, javaModules, moduleName, module);
+
+        // Exports
         emitExportFunctions(writer, javaModules, limiter, moduleName, module);
+        emitMemoryExports(writer, javaModules, moduleName, module);
+        emitTableExports(writer, javaModules, moduleName, module);
 
         // Create the initialization method
         MethodVisitor init = beginInitMethod(writer, javaModules, moduleName);
         emitGlobals(writer, javaModules, limiter, moduleName, module, init);
         emitMemory(writer, limiter, moduleName, module, init);
-        emitMemoryExports(writer, javaModules, moduleName, module);
         emitDatas(writer, javaModules, limiter, moduleName, module, init);
         emitTables(writer, limiter, moduleName, module, init);
         emitElements(writer, javaModules, limiter, moduleName, module, init);
@@ -340,12 +346,13 @@ public class Compile {
                     setter.visitEnd();
                 }
             } else {
+                int adjustedIndex = export.index() - module.memImports().size();
                 // Generate getter and setter
                 int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
                 // Getter:
                 MethodVisitor getter = writer.visitMethod(access, getExportedMemGetterName(export.name()), "()[B", null, null);
                 getter.visitCode();
-                getter.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(export.index()), "[B");
+                getter.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getMemoryName(adjustedIndex), "[B");
                 getter.visitInsn(Opcodes.ARETURN);
                 getter.visitMaxs(0, 0);
                 getter.visitEnd();
@@ -353,7 +360,7 @@ public class Compile {
                 MethodVisitor setter = writer.visitMethod(access, getExportedMemSetterName(export.name()), "([B)V", null, null);
                 setter.visitCode();
                 setter.visitVarInsn(Opcodes.ALOAD, 0);
-                setter.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getMemoryName(export.index()), "[B");
+                setter.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getMemoryName(adjustedIndex), "[B");
                 setter.visitInsn(Opcodes.RETURN);
                 setter.visitMaxs(0, 0);
                 setter.visitEnd();
@@ -422,6 +429,60 @@ public class Compile {
             init.visitFieldInsn(Opcodes.PUTSTATIC, className, getTableName(index), descriptor);
         }
         // TODO: For each export, generate a public function to grab the Object[]
+    }
+
+    private static void emitTableExports(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, String moduleName, WasmModule module) {
+        for (Export export : module.exports) {
+            // Get only table exports
+            if (export.type() != Export.ExportType.TABLE) continue;
+            // Generate the getter and setter for the table
+            if (export.index() < module.tableImports().size()) {
+                Import.Table tableImport = module.tableImports().get(export.index());
+                // Re-exporting an imported memory
+                if (javaModules.containsKey(tableImport.moduleName))
+                    throw new UnsupportedOperationException("Cannot import tables from java modules");
+                else {
+                    String tableDescriptor = tableImport.type.elementType() == ValType.funcref ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
+                    // It's re-exporting an imported wasm table. Delegate the function calls.
+                    int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                    // Getter:
+                    MethodVisitor getter = writer.visitMethod(access, getExportedTableGetterName(export.name()), "()" + tableDescriptor, null,null);
+                    getter.visitCode();
+                    getter.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(tableImport.moduleName), getExportedTableGetterName(tableImport.elementName), "()" + tableDescriptor, false);
+                    getter.visitInsn(Opcodes.ARETURN);
+                    getter.visitMaxs(0, 0);
+                    getter.visitEnd();
+                    // Setter:
+                    MethodVisitor setter = writer.visitMethod(access, getExportedTableSetterName(export.name()), "(" + tableDescriptor + ")V", null, null);
+                    setter.visitCode();
+                    setter.visitVarInsn(Opcodes.ALOAD, 0);
+                    setter.visitMethodInsn(Opcodes.INVOKESTATIC, getClassName(tableImport.moduleName), getExportedTableSetterName(tableImport.elementName), "(" + tableDescriptor + ")V", false);
+                    setter.visitInsn(Opcodes.RETURN);
+                    setter.visitMaxs(0, 0);
+                    setter.visitEnd();
+                }
+            } else {
+                int adjustedIndex = export.index() - module.tableImports().size();
+                String tableDescriptor = module.tables.get(adjustedIndex).elementType() == ValType.funcref ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
+                // Generate getter and setter
+                int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
+                // Getter:
+                MethodVisitor getter = writer.visitMethod(access, getExportedTableGetterName(export.name()), "()" + tableDescriptor, null, null);
+                getter.visitCode();
+                getter.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getTableName(adjustedIndex), tableDescriptor);
+                getter.visitInsn(Opcodes.ARETURN);
+                getter.visitMaxs(0, 0);
+                getter.visitEnd();
+                // Setter:
+                MethodVisitor setter = writer.visitMethod(access, getExportedTableSetterName(export.name()), "(" + tableDescriptor + ")V", null, null);
+                setter.visitCode();
+                setter.visitVarInsn(Opcodes.ALOAD, 0);
+                setter.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getTableName(adjustedIndex), tableDescriptor);
+                setter.visitInsn(Opcodes.RETURN);
+                setter.visitMaxs(0, 0);
+                setter.visitEnd();
+            }
+        }
     }
 
     private static void emitElements(ClassVisitor writer, Map<String, JavaModuleData<?>> javaModules, InstanceLimiter limiter, String moduleName, WasmModule module, MethodVisitor init) {
