@@ -51,16 +51,32 @@ public class WasmInstance {
     /**
      * All java modules should be added before adding any WASM modules.
      * A Java module is a class. Methods can be annotated in said class
-     * with @WasmJAllow to make them callable by WASM code. The instance
-     * is nullable; if you pass in a null instance then it's expected that
-     * all annotated methods are static.
+     * with @WasmJAllow to make them callable by WASM code.
+     * Static methods are invoked as-is.
+     * Non-static methods are invoked on the provided T instance.
      */
-    public <T> void addJavaModule(String moduleName, Class<T> moduleClass, T nullableInstance) {
+    public <T> void addGlobalInstanceJavaModule(String moduleName, Class<T> moduleClass, T instance) {
         if (javaModuleData.containsKey(moduleName))
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         if (!wasmModuleNames.isEmpty())
             throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
-        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, nullableInstance));
+        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, instance));
+    }
+
+    /**
+     * All java modules should be added before adding any WASM modules.
+     * A Java module is a class. Methods can be annotated in said class
+     * with @WasmJAllow to make them callable by WASM code.
+     * Static methods are invoked as-is.
+     * Non-static methods are not supported in this method, because there
+     * is no instance to call them on.
+     */
+    public void addStaticJavaModule(String moduleName, Class<?> moduleClass) {
+        if (javaModuleData.containsKey(moduleName))
+            throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
+        if (!wasmModuleNames.isEmpty())
+            throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
+        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, null));
     }
 
     /**
@@ -90,11 +106,12 @@ public class WasmInstance {
     }
 
     /**
-     * Get the jvm class generated from the wasm module with the given name
+     * Get the jvm class generated from the wasm module with the given name, or null if
+     * it doesn't exist.
      */
     public Class<?> getWasmClass(String wasmModuleName) {
         if (!wasmModuleNames.contains(wasmModuleName))
-            throw new IllegalArgumentException("No WASM module with name \"" + wasmModuleName + "\" was added to this instance");
+            return null; // throw new IllegalArgumentException("No WASM module with name \"" + wasmModuleName + "\" was added to this instance");
         try {
             return loader.loadClass(Compile.getClassName(wasmModuleName).replace('/', '.'));
         } catch (ClassNotFoundException e) {

@@ -9,7 +9,7 @@ import java.io.InputStream;
 public class Main {
     public static void main(String[] args) throws Throwable {
 
-        InputStream inStream = Main.class.getResourceAsStream("test_counter.wasm");
+        InputStream inStream = Main.class.getResourceAsStream("main.wasm");
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
@@ -17,12 +17,12 @@ public class Main {
         WasmInstance instance = new WasmInstance(Long.MAX_VALUE, 1_500_000);
 //        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
         instance.addTypeModule("dog", WasmJImpl.Dog.class); // Test dog module
-        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ
-//        instance.addJavaModule("WasmJ", WasmJImpl.FancyPrinter.class, new WasmJImpl.FancyPrinter(" xD")); // Test global instance mode
+        instance.addStaticJavaModule("WasmJ", WasmJImpl.class); // Add WasmJ
+//        instance.addGlobalInstanceJavaModule("WasmJ", WasmJImpl.FancyPrinter.class, new WasmJImpl.FancyPrinter(" xD")); // Test global instance mode
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
         // Testing code
-        ExportedFunction function = instance.getExportedFunction("aaa", "test_counter");
+        ExportedFunction function = instance.getExportedFunction("aaa", "tick");
         long start = System.nanoTime();
         function.invoke();
         long end = System.nanoTime();

@@ -463,7 +463,19 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         AbstractStackElement labelElem = new AbstractStackElement.LabelElement(label, stackType.outTypes().size());
         abstractStack.add(stackType.inTypes().size(), labelElem);
         int stackHeightBefore = abstractStack.size();
+
+        // If we come across an unconditional branch to somewhere outside, then the end result can be whatever we want!
+        boolean unconditionallyBranchedOut = false;
         for (Instruction inner : inst.inside()) {
+            // Check for an unconditional branch to somewhere else, or unconditional death
+            if ((inner instanceof Instruction.Unreachable)
+                ||
+                (inner instanceof Instruction.Branch b && b.index() > 0)
+                ||
+                (inner instanceof Instruction.BranchTable tb && tb.index() > 0 && ListUtils.all(tb.indices(), index -> index > 0))) {
+                unconditionallyBranchedOut = true;
+            }
+
             inner.accept(this);
             if (inner == next) {
                 // Do it again, counting up the elements that occur after "inner" does, until the next null-returner
@@ -483,8 +495,18 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
         int stackHeightAfter = abstractStack.size();
         if (stackHeightAfter - stackHeightBefore != stackType.outTypes().size() - stackType.inTypes().size()) {
-            if (stackHeightAfter - stackHeightBefore < stackType.outTypes().size() - stackType.inTypes().size())
-                throw new IllegalStateException("Bug in compiler, please report! Stack height before was " + stackHeightBefore + ", stack height after was " + stackHeightAfter + ". Expected change was " + (stackType.outTypes().size() - stackType.inTypes().size()));
+            if (stackHeightAfter - stackHeightBefore < stackType.outTypes().size() - stackType.inTypes().size()) {
+                if (unconditionallyBranchedOut) {
+                    // We branched out. Just pretend that the stack has what we wanted...
+                    int diff = (stackType.outTypes().size() - stackType.inTypes().size()) - (stackHeightAfter - stackHeightBefore); // The number of extra things that were expected
+                    // For the last "diff" elements of outTypes, just pretend they're on the stack now by pushing empty versions of them
+                    for (int i = stackType.outTypes().size() - diff; i < stackType.outTypes().size(); i++)
+                        abstractStack.push(new AbstractStackElement.ValueElement(stackType.outTypes().get(i), -1));
+                } else {
+                    throw new IllegalStateException("Bug in compiler, please report! Stack height before was " + stackHeightBefore + ", stack height after was " + stackHeightAfter + ". Expected change was " + (stackType.outTypes().size() - stackType.inTypes().size()));
+                }
+            }
+
             int numToPop = (stackHeightAfter - stackHeightBefore) - (stackType.outTypes().size() - stackType.inTypes().size());
             for (int i = 0; i < numToPop; i++) {
                 AbstractStackElement top = abstractStack.pop();
@@ -562,19 +584,16 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
         visitor.visitJumpInsn(Opcodes.IFEQ, ifFalse);
         visitBlock(new Instruction.Block(inst.bt(), inst.ifBlock()));
+
+        // After visiting the "true" block, undo the block type before the "else" block is applied.
+        // This way, the block type isn't applied twice on the abstract stack.
+        abstractStack.applyStackType(inst.bt().stackType(module).inverse());
+
         visitor.visitJumpInsn(Opcodes.GOTO, end);
         visitor.visitLabel(ifFalse);
         visitBlock(new Instruction.Block(inst.bt(), inst.elseBlock()));
         visitor.visitLabel(end);
-        // Only one of the paths will be taken, so only let one block affect the stack
-        // Undo the actions of one block upon the stack
-        StackType blocktype = inst.bt().stackType(module);
-        int num = blocktype.outTypes().size() - blocktype.inTypes().size();
-        for (int i = 0; i < num; i++) {
-            AbstractStackElement top = abstractStack.pop();
-            if (!(top instanceof AbstractStackElement.ValueElement))
-                throw new IllegalStateException("Malformed WASM code, or bug in compiler");
-        }
+
         return null;
     }
 

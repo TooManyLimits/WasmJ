@@ -45,9 +45,9 @@ public class JavaModuleData<T> {
 
     /**
      * The basic, "global module" reflection type that's used
-     * in the "addJavaModule()" method.
-     * Used when you don't want instances to be passed by WASM
-     * code.
+     * in "addGlobalInstanceJavaModule" and "addStaticJavaModule".
+     * The global instance is null in the second case and T in the
+     * first case.
      */
     public JavaModuleData(Class<T> moduleClass, T globalInstance) {
         this.moduleClass = moduleClass;

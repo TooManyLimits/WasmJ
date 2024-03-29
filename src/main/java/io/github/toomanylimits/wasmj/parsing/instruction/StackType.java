@@ -1,13 +1,27 @@
 package io.github.toomanylimits.wasmj.parsing.instruction;
 
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.util.ListUtils;
 
+import java.util.Collections;
 import java.util.List;
 
 public sealed interface StackType {
 
     List<ValType> inTypes();
     List<ValType> outTypes();
+
+    // Return a stack type which does the opposite of this one.
+    // For example, if this pops an f32, then an i32, then pushes
+    // an externref, then an i64:
+    // The inverse will pop an i64, then an externref, then push
+    // an i32, then push an f32.
+    default StackType inverse() {
+        if (this == SPECIAL)
+            return SPECIAL;
+        return new StackType.Basic(ListUtils.reversed(outTypes()), ListUtils.reversed(inTypes()));
+    }
+
 
     // Special: when this instruction doesn't always have the same stack type.
     // Must be handled specially!

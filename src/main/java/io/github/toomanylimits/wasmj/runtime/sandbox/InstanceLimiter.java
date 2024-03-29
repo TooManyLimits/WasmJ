@@ -20,12 +20,12 @@ public class InstanceLimiter {
     public final long maxInstructions; // If it does count instructions, the maximum number of instructions before erroring
     private long instructionsExecuted; // The current number of instructions executed
 
-    // Memory counting variables (TODO)
+    // Memory counting variables
     public final boolean countsMemory; // Whether this instance counts memory usage at all
     public final long maxJvmHeapMemory; // The maximum jvm heap memory before this errors
     private long heapMemoryUsed; // The current amount of jvm heap memory used
 
-    // Pass -1 if you want the limiter to not track that variable at all.
+    // Pass -1 if you want the limiter to not track that variable.
     // Can improve performance, since the code doesn't need to increment
     // variables and make checks all the time.
     public InstanceLimiter(long maxInstructions, long maxJvmHeapMemory) {
@@ -45,7 +45,7 @@ public class InstanceLimiter {
         instructionsExecuted = instructions;
     }
     public void incInstructions(long instructions) throws TooManyInstructionsException {
-//        System.out.println(instructionsExecuted + " instructions executed. Incrementing by " + instructions + "...");
+        if (!countsInstructions) return;
         // Increment, and error if we've gone too high. Also, error on overflow.
         // addExact *should* be intrinsified, probably, so this isn't a big performance hit.
         // It's not expected for instructionsExecuted to ever overflow,
@@ -63,14 +63,14 @@ public class InstanceLimiter {
         return heapMemoryUsed;
     }
     public void incHeapMemoryUsed(long amount) throws TooMuchHeapMemoryException {
+        if (!countsMemory) return;
         heapMemoryUsed = Math.addExact(heapMemoryUsed, amount);
-//        System.out.println("Incrementing memory by " + amount + ". Total = " + heapMemoryUsed);
         if (heapMemoryUsed > maxJvmHeapMemory)
             throw new TooMuchHeapMemoryException(maxJvmHeapMemory);
     }
     public void decHeapMemoryUsed(long amount) {
+        if (!countsMemory) return;
         heapMemoryUsed = Math.subtractExact(heapMemoryUsed, amount);
-//        System.out.println("Decrementing memory by " + amount + ". Total = " + heapMemoryUsed);
         if (heapMemoryUsed < 0)
             throw new IllegalStateException("Heap memory used fell below 0? Should never happen, bug in refcounting");
     }

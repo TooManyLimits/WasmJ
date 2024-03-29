@@ -4,10 +4,7 @@ import io.github.toomanylimits.wasmj.util.funcs.ThrowingBiFunction;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingConsumer;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingFunction;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class ListUtils {
 
@@ -42,8 +39,17 @@ public class ListUtils {
         return -1;
     }
 
+    public static <T> List<T> reversed(List<T> list) {
+        ArrayList<T> res = new ArrayList<>(list);
+        Collections.reverse(res);
+        return res;
+    }
+
     public static <T, E extends Throwable> boolean any(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
         return indexOf(list, pred) != -1;
+    }
+    public static <T, E extends Throwable> boolean all(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
+        return !any(list, x -> !pred.accept(x));
     }
     public static <T, E extends Throwable> T first(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
         int index = indexOf(list, pred);
