@@ -29,14 +29,14 @@ public class FuncType {
         if (cachedDescriptor == null) {
             StringBuilder res = new StringBuilder("(");
             for (ValType arg : args)
-                res.append(arg.desc());
+                res.append(arg.descriptor);
             res.append(")");
             if (results.size() > 1)
                 throw new UnsupportedOperationException("Multiple returns not (yet?) supported by WasmJ");
             if (results.size() == 0)
                 res.append("V");
             else
-                res.append(results.get(0).desc());
+                res.append(results.get(0).descriptor);
             cachedDescriptor = res.toString();
         }
         return cachedDescriptor;

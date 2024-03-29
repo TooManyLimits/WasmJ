@@ -108,11 +108,11 @@ public class Compile {
             for (int localIndex = funcType.args.size(); localIndex < code.locals.size(); localIndex++) {
                 ValType localType = code.locals.get(localIndex);
                 int mappedIndex = code.localMappings().get(localIndex);
-                if (localType == ValType.i32) visitor.visitInsn(Opcodes.ICONST_0);
-                else if (localType == ValType.i64) visitor.visitInsn(Opcodes.LCONST_0);
-                else if (localType == ValType.f32) visitor.visitInsn(Opcodes.FCONST_0);
-                else if (localType == ValType.f64) visitor.visitInsn(Opcodes.DCONST_0);
-                else if (localType == ValType.funcref || localType == ValType.externref) visitor.visitInsn(Opcodes.ACONST_NULL);
+                if (localType == ValType.I32) visitor.visitInsn(Opcodes.ICONST_0);
+                else if (localType == ValType.I64) visitor.visitInsn(Opcodes.LCONST_0);
+                else if (localType == ValType.F32) visitor.visitInsn(Opcodes.FCONST_0);
+                else if (localType == ValType.F64) visitor.visitInsn(Opcodes.DCONST_0);
+                else if (localType == ValType.FUNCREF || localType == ValType.EXTERNREF) visitor.visitInsn(Opcodes.ACONST_NULL);
                 else throw new UnsupportedOperationException("Cannot initialize local of given type - only int, long, float, double, reftype");
                 BytecodeHelper.storeLocal(visitor, mappedIndex, localType);
             }
@@ -186,7 +186,7 @@ public class Compile {
                 String methodName = getJavaExportFuncName(export.name()); // GetJavaExportName!
                 StringBuilder descriptor = new StringBuilder("(");
                 for (ValType paramType: funcType.args)
-                    descriptor.append(paramType.desc());
+                    descriptor.append(paramType.descriptor);
                 descriptor.append(")[Ljava/lang/Object;"); // Returns an object array
                 MethodVisitor methodVisitor = writer.visitMethod(access, methodName, descriptor.toString(), null, null);
                 methodVisitor.visitCode();
@@ -267,11 +267,11 @@ public class Compile {
             Global global = module.globals.get(index);
             int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
             // Create field:
-            writer.visitField(access, getGlobalName(index), global.globalType().valType().desc(), null, null);
+            writer.visitField(access, getGlobalName(index), global.globalType().valType().descriptor, null, null);
             // Initialize:
-            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), global.initializer()), null, init);
+            MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.EXTERNREF, ValType.EXTERNREF, ValType.EXTERNREF), global.initializer()), null, init);
             instVisitor.visitExpr(global.initializer());
-            init.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().desc());
+            init.visitFieldInsn(Opcodes.PUTSTATIC, className, getGlobalName(index), global.globalType().valType().descriptor);
         }
         // TODO: For each export, generate a public function to grab the field
     }
@@ -396,7 +396,7 @@ public class Compile {
             // If the data is active, then "memory.init" it right away, and then "data.drop" it:
             if (data.mode instanceof Data.Mode.Active activeMode) {
                 // Create a visitor
-                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), activeMode.offset()), null, init);
+                MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, new Code(-1, -1, List.of(ValType.EXTERNREF, ValType.EXTERNREF, ValType.EXTERNREF), activeMode.offset()), null, init);
                 // Visit the code to init, then drop.
                 instVisitor.visitExpr(activeMode.offset()); // Stack = [offset (destination)]
                 instVisitor.visitI32Const(new Instruction.I32Const(0)); // [offset, 0 (source)]
@@ -421,7 +421,7 @@ public class Compile {
                 init.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incHeapMemoryUsed", "(J)V", false); // []
             }
             // Create fields and get init to fill them with values
-            String descriptor = tableType.elementType() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+            String descriptor = tableType.elementType() == ValType.EXTERNREF ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 
             writer.visitField(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, getTableName(index), descriptor, null, null); // Create table field
             init.visitLdcInsn(initialSize);
@@ -442,7 +442,7 @@ public class Compile {
                 if (javaModules.containsKey(tableImport.moduleName))
                     throw new UnsupportedOperationException("Cannot import tables from java modules");
                 else {
-                    String tableDescriptor = tableImport.type.elementType() == ValType.funcref ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
+                    String tableDescriptor = tableImport.type.elementType() == ValType.FUNCREF ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
                     // It's re-exporting an imported wasm table. Delegate the function calls.
                     int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
                     // Getter:
@@ -463,7 +463,7 @@ public class Compile {
                 }
             } else {
                 int adjustedIndex = export.index() - module.tableImports().size();
-                String tableDescriptor = module.tables.get(adjustedIndex).elementType() == ValType.funcref ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
+                String tableDescriptor = module.tables.get(adjustedIndex).elementType() == ValType.FUNCREF ? FUNCREF_TABLE_DESCRIPTOR : TABLE_DESCRIPTOR;
                 // Generate getter and setter
                 int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
                 // Getter:
@@ -490,9 +490,9 @@ public class Compile {
             Element elem = module.elements.get(elemIndex);
 
             // After this if-else, we're going to want an array on the stack, followed by an index.
-            Code temp = new Code(-1, -1, List.of(ValType.externref, ValType.externref, ValType.externref), null);
+            Code temp = new Code(-1, -1, List.of(ValType.EXTERNREF, ValType.EXTERNREF, ValType.EXTERNREF), null);
             MethodWritingVisitor instVisitor = new MethodWritingVisitor(javaModules, limiter, moduleName, module, temp, null, init);
-            String descriptor = elem.type() == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+            String descriptor = elem.type() == ValType.EXTERNREF ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
             boolean isActive = elem.mode() instanceof Element.Mode.Active;
 
             // If it's not active, increment memory usage and create a field:

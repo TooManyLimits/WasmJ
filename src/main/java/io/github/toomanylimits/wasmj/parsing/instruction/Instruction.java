@@ -38,7 +38,7 @@ public sealed interface Instruction {
     record CallIndirect(int typeIndex, int tableIndex) implements Instruction { public StackType stackType() { return StackType.SPECIAL; } public <R> R accept(InstructionVisitor<R> visitor) { return visitor.visitCallIndirect(this); } }
 
     //Reference Instructions
-    record RefNull(ValType.RefType type) implements Instruction { public StackType stackType() { return StackType.SPECIAL; } public <R> R accept(InstructionVisitor<R> visitor) { return visitor.visitRefNull(this); } }
+    record RefNull(ValType type) implements Instruction { public StackType stackType() { return StackType.SPECIAL; } public <R> R accept(InstructionVisitor<R> visitor) { return visitor.visitRefNull(this); } }
     final class RefIsNull implements Instruction { public static final RefIsNull INSTANCE = new RefIsNull(); private RefIsNull() {} public StackType stackType() { return StackType.SPECIAL; } public <R> R accept(InstructionVisitor<R> visitor) { return visitor.visitRefIsNull(this); } }
     record RefFunc(int funcIndex) implements Instruction { public StackType stackType() { return StackType._funcref; } public <R> R accept(InstructionVisitor<R> visitor) { return visitor.visitRefFunc(this); } }
 
@@ -533,7 +533,7 @@ public sealed interface Instruction {
             case 0x10 -> new Call(ParseHelper.readUnsignedWasmInt(stream));
             case 0x11 -> new CallIndirect(ParseHelper.readUnsignedWasmInt(stream), ParseHelper.readUnsignedWasmInt(stream));
 
-            case 0xD0 -> new RefNull(ValType.RefType.read(stream));
+            case 0xD0 -> new RefNull(ValType.readRefType(stream));
             case 0xD1 -> RefIsNull.INSTANCE;
             case 0xD2 -> new RefFunc(ParseHelper.readUnsignedWasmInt(stream));
 

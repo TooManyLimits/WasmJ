@@ -20,11 +20,11 @@ public class BytecodeHelper {
     // Get the type name of the given class for ASM
     public static ValType wasmType(Class<?> clazz) {
         if (clazz == void.class) return null;
-        if (clazz == int.class) return ValType.i32;
-        if (clazz == long.class) return ValType.i64;
-        if (clazz == float.class) return ValType.f32;
-        if (clazz == double.class) return ValType.f64;
-        if (Object.class.isAssignableFrom(clazz)) return ValType.externref;
+        if (clazz == int.class) return ValType.I32;
+        if (clazz == long.class) return ValType.I64;
+        if (clazz == float.class) return ValType.F32;
+        if (clazz == double.class) return ValType.F64;
+        if (Object.class.isAssignableFrom(clazz)) return ValType.EXTERNREF;
         throw new IllegalArgumentException("Type " + clazz + " has no corresponding WASM type");
     }
     // Emit bytecode that throws a WasmJ runtime error with the given constant message
@@ -72,11 +72,11 @@ public class BytecodeHelper {
         else visitor.visitLdcInsn(value);
     }
     public static void boxValue(MethodVisitor visitor, ValType type) {
-        if (type == ValType.i32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-        else if (type == ValType.i64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
-        else if (type == ValType.f32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
-        else if (type == ValType.f64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
-        else if (type == ValType.funcref || type == ValType.externref) { /* Do nothing */ }
+        if (type == ValType.I32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+        else if (type == ValType.I64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
+        else if (type == ValType.F32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
+        else if (type == ValType.F64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
+        else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) { /* Do nothing */ }
         else throw new UnsupportedOperationException("Cannot box value of given type - only int, long, float, double, reftype");
     }
     // Give a jumping opcode to test the top of the stack.
@@ -94,60 +94,60 @@ public class BytecodeHelper {
     }
     // Emit bytecode that pops a value of the given type
     public static void popValue(MethodVisitor visitor, ValType type) {
-        switch (type.stackSlots()) {
+        switch (type.stackSlots) {
             case 0 -> {}
             case 1 -> visitor.visitInsn(Opcodes.POP);
             case 2 -> visitor.visitInsn(Opcodes.POP2);
-            default -> throw new UnsupportedOperationException("Cannot pop value with " + type.stackSlots() + " stack slots, jvm only supports 1 and 2!");
+            default -> throw new UnsupportedOperationException("Cannot pop value with " + type.stackSlots + " stack slots, jvm only supports 1 and 2!");
         }
     }
     // Emit bytecode that swaps two values of the given type
     public static void swapValues(MethodVisitor visitor, ValType type) {
-        switch (type.stackSlots()) {
+        switch (type.stackSlots) {
             case 0 -> {}
             case 1 -> visitor.visitInsn(Opcodes.SWAP);
             case 2 -> {
                 visitor.visitInsn(Opcodes.DUP2_X2);
                 visitor.visitInsn(Opcodes.POP2);
             }
-            default -> throw new UnsupportedOperationException("Cannot swap value with " + type.stackSlots() + " stack slots, jvm only supports 1 and 2!");
+            default -> throw new UnsupportedOperationException("Cannot swap value with " + type.stackSlots + " stack slots, jvm only supports 1 and 2!");
         }
     }
     // Emit bytecode that dups a value of the given type
     public static void dupValue(MethodVisitor visitor, ValType type) {
-        switch (type.stackSlots()) {
+        switch (type.stackSlots) {
             case 0 -> {}
             case 1 -> visitor.visitInsn(Opcodes.DUP);
             case 2 -> visitor.visitInsn(Opcodes.DUP2);
-            default -> throw new UnsupportedOperationException("Cannot dup value with " + type.stackSlots() + " stack slots, jvm only supports 1 and 2!");
+            default -> throw new UnsupportedOperationException("Cannot dup value with " + type.stackSlots + " stack slots, jvm only supports 1 and 2!");
         }
     }
     // Emit bytecode that stores a local of the given type at the given index
     public static void storeLocal(MethodVisitor visitor, int index, ValType type) {
-        if (type == ValType.i32) visitor.visitVarInsn(Opcodes.ISTORE, index);
-        else if (type == ValType.i64) visitor.visitVarInsn(Opcodes.LSTORE, index);
-        else if (type == ValType.f32) visitor.visitVarInsn(Opcodes.FSTORE, index);
-        else if (type == ValType.f64) visitor.visitVarInsn(Opcodes.DSTORE, index);
-        else if (type == ValType.funcref || type == ValType.externref) visitor.visitVarInsn(Opcodes.ASTORE, index);
+        if (type == ValType.I32) visitor.visitVarInsn(Opcodes.ISTORE, index);
+        else if (type == ValType.I64) visitor.visitVarInsn(Opcodes.LSTORE, index);
+        else if (type == ValType.F32) visitor.visitVarInsn(Opcodes.FSTORE, index);
+        else if (type == ValType.F64) visitor.visitVarInsn(Opcodes.DSTORE, index);
+        else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) visitor.visitVarInsn(Opcodes.ASTORE, index);
         else throw new UnsupportedOperationException("Cannot store local of given type - only int, long, float, double, reftype");
     }
     // Emit bytecode that loads a local of the given type at the given index
     public static void loadLocal(MethodVisitor visitor, int index, ValType type) {
-        if (type == ValType.i32) visitor.visitVarInsn(Opcodes.ILOAD, index);
-        else if (type == ValType.i64) visitor.visitVarInsn(Opcodes.LLOAD, index);
-        else if (type == ValType.f32) visitor.visitVarInsn(Opcodes.FLOAD, index);
-        else if (type == ValType.f64) visitor.visitVarInsn(Opcodes.DLOAD, index);
-        else if (type == ValType.funcref || type == ValType.externref) visitor.visitVarInsn(Opcodes.ALOAD, index);
+        if (type == ValType.I32) visitor.visitVarInsn(Opcodes.ILOAD, index);
+        else if (type == ValType.I64) visitor.visitVarInsn(Opcodes.LLOAD, index);
+        else if (type == ValType.F32) visitor.visitVarInsn(Opcodes.FLOAD, index);
+        else if (type == ValType.F64) visitor.visitVarInsn(Opcodes.DLOAD, index);
+        else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) visitor.visitVarInsn(Opcodes.ALOAD, index);
         else throw new UnsupportedOperationException("Cannot load local of given type - only int, long, float, double, reftype");
     }
     // Emit bytecode that stores a local of the given type at the given index
     public static void returnValue(MethodVisitor visitor, ValType type) {
         if (type == null) visitor.visitInsn(Opcodes.RETURN); // null = void
-        else if (type == ValType.i32) visitor.visitInsn(Opcodes.IRETURN);
-        else if (type == ValType.i64) visitor.visitInsn(Opcodes.LRETURN);
-        else if (type == ValType.f32) visitor.visitInsn(Opcodes.FRETURN);
-        else if (type == ValType.f64) visitor.visitInsn(Opcodes.DRETURN);
-        else if (type == ValType.funcref || type == ValType.externref) visitor.visitInsn(Opcodes.ARETURN);
+        else if (type == ValType.I32) visitor.visitInsn(Opcodes.IRETURN);
+        else if (type == ValType.I64) visitor.visitInsn(Opcodes.LRETURN);
+        else if (type == ValType.F32) visitor.visitInsn(Opcodes.FRETURN);
+        else if (type == ValType.F64) visitor.visitInsn(Opcodes.DRETURN);
+        else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) visitor.visitInsn(Opcodes.ARETURN);
         else throw new UnsupportedOperationException("Cannot return value of given type - only int, long, float, double, reftype");
     }
 

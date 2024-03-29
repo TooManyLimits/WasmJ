@@ -10,7 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-public record Element(ValType.RefType type, List<Expression> exprs, Mode mode) {
+public record Element(ValType type, List<Expression> exprs, Mode mode) {
 
     public sealed interface Mode {
         final class Passive implements Mode { public static final Passive INSTANCE = new Passive(); private Passive() {} }
@@ -22,9 +22,9 @@ public record Element(ValType.RefType type, List<Expression> exprs, Mode mode) {
         return ListUtils.map(ParseHelper.readVector(stream, s -> ParseHelper.readUnsignedWasmInt(s)), y -> new Expression(List.of(new Instruction.RefFunc(y))));
     }
 
-    private static ValType.RefType readElemKind(InputStream stream) throws IOException, ModuleParseException {
+    private static ValType readElemKind(InputStream stream) throws IOException, ModuleParseException {
         int b = stream.read();
-        if (b == 0) return ValType.RefType.funcref;
+        if (b == 0) return ValType.FUNCREF;
         throw new ModuleParseException("Expected ElemKind, got invalid byte " + b);
     }
 
@@ -33,7 +33,7 @@ public record Element(ValType.RefType type, List<Expression> exprs, Mode mode) {
         return switch (b) {
             case 0 -> {
                 Mode mode = new Mode.Active(0, Expression.read(stream));
-                yield new Element(ValType.funcref, readFunctionIndices(stream), mode);
+                yield new Element(ValType.FUNCREF, readFunctionIndices(stream), mode);
             }
             case 1 -> new Element(readElemKind(stream), readFunctionIndices(stream), Mode.Passive.INSTANCE);
             case 2 -> {
@@ -43,14 +43,14 @@ public record Element(ValType.RefType type, List<Expression> exprs, Mode mode) {
             case 3 -> new Element(readElemKind(stream), readFunctionIndices(stream), Mode.Declarative.INSTANCE);
             case 4 -> {
                 Mode mode = new Mode.Active(0, Expression.read(stream));
-                yield new Element(ValType.funcref, ParseHelper.readVector(stream, Expression::read), mode);
+                yield new Element(ValType.FUNCREF, ParseHelper.readVector(stream, Expression::read), mode);
             }
-            case 5 -> new Element(ValType.RefType.read(stream), ParseHelper.readVector(stream, Expression::read), Mode.Passive.INSTANCE);
+            case 5 -> new Element(ValType.readRefType(stream), ParseHelper.readVector(stream, Expression::read), Mode.Passive.INSTANCE);
             case 6 -> {
                 Mode mode = new Mode.Active(ParseHelper.readUnsignedWasmInt(stream), Expression.read(stream));
-                yield new Element(ValType.RefType.read(stream), ParseHelper.readVector(stream, Expression::read), mode);
+                yield new Element(ValType.readRefType(stream), ParseHelper.readVector(stream, Expression::read), mode);
             }
-            case 7 -> new Element(ValType.RefType.read(stream), ParseHelper.readVector(stream, Expression::read), Mode.Declarative.INSTANCE);
+            case 7 -> new Element(ValType.readRefType(stream), ParseHelper.readVector(stream, Expression::read), Mode.Declarative.INSTANCE);
             default -> throw new ModuleParseException("Invalid number provided for Element type flags: " + b);
         };
     }

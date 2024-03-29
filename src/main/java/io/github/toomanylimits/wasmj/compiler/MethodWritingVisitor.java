@@ -14,9 +14,7 @@ import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 
-import java.lang.annotation.ElementType;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.*;
 
@@ -70,7 +68,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         public int nextLocalSlot() {
             for (AbstractStackElement e : elements)
                 if (e instanceof AbstractStackElement.ValueElement v && v.localVariableIndex != -1) {
-                    return v.localVariableIndex + v.valueType.stackSlots();
+                    return v.localVariableIndex + v.valueType.stackSlots;
                 }
             return MethodWritingVisitor.this.code.nextLocalSlot();
         }
@@ -125,7 +123,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             if (stackType.inTypes().equals(stackType.outTypes()))
                 return;
             for (ValType type : stackType.inTypes()) {
-                if (type instanceof ValType.RefType && limiter.countsMemory)
+                if (type.isRef() && limiter.countsMemory)
                     throw new IllegalArgumentException("Shouldn't use applyStackType with reference types as inTypes, when counting memory!");
                 pop();
             }
@@ -368,16 +366,16 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Pop it from the abstract stack:
             abstractStack.popExpecting(t);
             // Dup the index down and swap
-            if (t.stackSlots() == 1) {
+            if (t.stackSlots == 1) {
                 visitor.visitInsn(Opcodes.DUP_X1); // [...results, index, lastResult, index]
                 visitor.visitInsn(Opcodes.SWAP); // [...results, index, index, lastResult]
-            } else if (t.stackSlots() == 2) {
+            } else if (t.stackSlots == 2) {
                 visitor.visitInsn(Opcodes.DUP_X2); // [...results, index, lastResult, index]
                 visitor.visitInsn(Opcodes.DUP_X2); // [...results, index, index, lastResult, index]
                 visitor.visitInsn(Opcodes.POP); // [...results, index, index, lastResult]
             } else throw new IllegalStateException();
             // If we count memory, decrement its refcount:
-            if (limiter.countsMemory && t instanceof ValType.RefType) {
+            if (limiter.countsMemory && t.isRef()) {
                 visitor.visitInsn(Opcodes.DUP);
                 decrementRefCountOfTopElement();
             }
@@ -396,7 +394,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         // Iterate over remaining elements of stack, find objects and decrement their refcounts.
         if (limiter.countsMemory) { // If we count memory at all, that is
             for (var e: abstractStack) {
-                if (e instanceof AbstractStackElement.ValueElement v && v.valueType instanceof ValType.RefType) {
+                if (e instanceof AbstractStackElement.ValueElement v && v.valueType.isRef()) {
                     if (v.localVariableIndex == -1)
                         throw new IllegalStateException("Value is ref type but doesnt have local variable index??");
                     BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
@@ -407,7 +405,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Also iterate over the original local variables and decrement theirs
             for (int i = 0; i < code.locals.size(); i++) {
                 ValType localType = code.locals.get(i);
-                if (localType instanceof ValType.RefType) {
+                if (localType.isRef()) {
                     int mappedIndex = code.localMappings().get(i);
                     BytecodeHelper.loadLocal(visitor, mappedIndex, localType);
                     BytecodeHelper.debugPrintln(visitor, "DecRefCount - return, removing local vars");
@@ -568,7 +566,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // If false, jump to end
     @Override public Void visitIf(Instruction.If inst) {
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
         Label end = new Label();
         visitor.visitJumpInsn(Opcodes.IFEQ, end);
         visitBlock(new Instruction.Block(inst.bt(), inst.inside())); // Delegate to Instruction.Block() implementation
@@ -578,7 +576,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Standard if-else
     @Override public Void visitIfElse(Instruction.IfElse inst) {
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
         Label ifFalse = new Label();
         Label end = new Label();
 
@@ -636,7 +634,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                     // Store as local
                     tempLocals.push(valueElem.valueType());
                     BytecodeHelper.storeLocal(visitor, curLocalIndex, valueElem.valueType());
-                    curLocalIndex += valueElem.valueType().stackSlots();
+                    curLocalIndex += valueElem.valueType().stackSlots;
                 } else if (valueIndex < valueCount) {
                     // Pop it, also decrement ref count if applicable
                     if (limiter.countsMemory && valueElem.localVariableIndex != -1) {
@@ -658,7 +656,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
         // Restore the locals
         for (ValType t : tempLocals) {
-            curLocalIndex -= t.stackSlots();
+            curLocalIndex -= t.stackSlots;
             BytecodeHelper.loadLocal(visitor, curLocalIndex, t);
         }
         // Now finally jump.
@@ -667,7 +665,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitBranchIf(Instruction.BranchIf inst) {
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
         // Value on top of the stack is an i32.
         // If it's != 0, then branch, otherwise not.
         Label end = new Label();
@@ -678,7 +676,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitBranchTable(Instruction.BranchTable inst) {
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
         // Create all the labels and visit the table switch
         Label defaultLabel = new Label();
         Label[] labels = new Label[inst.indices().size()];
@@ -711,7 +709,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         // Iterate over remaining elements of stack, find objects and decrement their refcounts.
         if (limiter.countsMemory) { // If we count memory at all, that is
             for (var e: abstractStack) {
-                if (e instanceof AbstractStackElement.ValueElement v && v.valueType instanceof ValType.RefType) {
+                if (e instanceof AbstractStackElement.ValueElement v && v.valueType.isRef()) {
                     if (v.localVariableIndex == -1)
                         throw new IllegalStateException("Value is ref type but doesnt have local variable index??");
                     BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
@@ -723,7 +721,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // Also iterate over the original local variables and decrement theirs
             for (int i = 0; i < code.locals.size(); i++) {
                 ValType localType = code.locals.get(i);
-                if (localType instanceof ValType.RefType) {
+                if (localType.isRef()) {
                     int mappedIndex = code.localMappings().get(i);
                     BytecodeHelper.loadLocal(visitor, mappedIndex, localType);
                     BytecodeHelper.debugPrintln(visitor, "DecRefCount - return, removing local vars");
@@ -817,7 +815,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                     for (ValType t : funcType.asStackType().outTypes()) {
                         if (funcType.asStackType().outTypes().size() > 1)
                             throw new IllegalStateException("Multiple returns are TODO");
-                        if (t instanceof ValType.RefType) {
+                        if (t.isRef()) {
                             visitor.visitInsn(Opcodes.DUP);
                             BytecodeHelper.debugPrintln(visitor, "IncRefCount - After call");
                             incrementRefCountOfTopElement(); // Inc ref count
@@ -840,13 +838,13 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 if (limiter.countsMemory) {
                     // TODO: Multiple returns
                     int nextLocalSlot = abstractStack.nextLocalSlot();
-                    if (funcType.asStackType().outTypes().size() > 0 && funcType.asStackType().outTypes().get(0) instanceof ValType.RefType t) {
+                    if (funcType.asStackType().outTypes().size() > 0 && funcType.asStackType().outTypes().get(0).isRef()) {
                         if (funcType.asStackType().outTypes().size() > 1)
                             throw new IllegalStateException("Multiple returns are TODO");
 //                        visitor.visitInsn(Opcodes.DUP); // Explicitly left out - do not increment the refcounter in this case!
 //                        incrementRefCountOfTopElement();
                         visitor.visitInsn(Opcodes.DUP);
-                        BytecodeHelper.storeLocal(visitor, nextLocalSlot, t); // Store as local for later
+                        BytecodeHelper.storeLocal(visitor, nextLocalSlot, funcType.asStackType().outTypes().get(0)); // Store as local for later
                     }
                 }
             }
@@ -869,7 +867,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 for (ValType t : funcType.asStackType().outTypes()) {
                     if (funcType.asStackType().outTypes().size() > 1)
                         throw new IllegalStateException("Multiple returns are TODO");
-                    if (t instanceof ValType.RefType) {
+                    if (t.isRef()) {
                         visitor.visitInsn(Opcodes.DUP);
                         BytecodeHelper.debugPrintln(visitor, "IncRefCount - After call");
 //                        incrementRefCountOfTopElement(); // Explicitly left out - do not increment the refcounter in this case!
@@ -887,7 +885,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitCallIndirect(Instruction.CallIndirect inst) {
         // Manage the abstract stack and get the function type data
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
         FuncType funcType = module.types.get(inst.typeIndex());
         if (funcType.results.size() > 1)
             throw new UnsupportedOperationException("Multiple returns not yet implemented");
@@ -901,7 +899,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.AALOAD); // [func = table[index]]
         visitor.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(FuncRefInstance.class), "handle", Type.getDescriptor(MethodHandle.class)); // [handle]
         // Now we need to put the handle below all the args of the function...
-        int stackSlotSum = funcType.args.stream().map(ValType::stackSlots).reduce(0, Integer::sum);
+        int stackSlotSum = funcType.args.stream().map(v -> v.stackSlots).reduce(0, Integer::sum);
         switch (stackSlotSum) {
             case 0 -> {} // Nothing happens
             case 1 -> visitor.visitInsn(Opcodes.SWAP);
@@ -918,7 +916,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 int localOffset = 1;
                 while (stackSlotSum > 2) {
                     BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
-                    int stackSlotChange = funcType.args.get(paramIndex).stackSlots();
+                    int stackSlotChange = funcType.args.get(paramIndex).stackSlots;
                     paramIndex--;
                     localOffset += stackSlotChange;
                     stackSlotSum -= stackSlotChange;
@@ -934,7 +932,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
                 // Load the locals again
                 while (paramIndex < funcType.args.size() - 1) {
                     paramIndex++;
-                    int stackSlotChange = funcType.args.get(paramIndex).stackSlots();
+                    int stackSlotChange = funcType.args.get(paramIndex).stackSlots;
                     localOffset -= stackSlotChange;
                     BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + localOffset, funcType.args.get(paramIndex));
                 }
@@ -957,8 +955,8 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     // Check if null, push 1 if yes, 0 if no
     @Override public Void visitRefIsNull(Instruction.RefIsNull inst) {
         // Can check nullness of a funcref OR an externref
-        AbstractStackElement.ValueElement v = abstractStack.popExpecting(ValType.funcref, ValType.externref);
-        abstractStack.push(new AbstractStackElement.ValueElement(ValType.i32, -1)); // Push i32 as result
+        AbstractStackElement.ValueElement v = abstractStack.popExpecting(ValType.FUNCREF, ValType.EXTERNREF);
+        abstractStack.push(new AbstractStackElement.ValueElement(ValType.I32, -1)); // Push i32 as result
         // If we're memory-counting, then decrement the ref count of this object
         if (limiter.countsMemory && v.localVariableIndex != -1) {
             BytecodeHelper.loadLocal(visitor, v.localVariableIndex, v.valueType);
@@ -1031,7 +1029,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
 
     @Override public Void visitSelect(Instruction.Select inst) {
-        abstractStack.popExpecting(ValType.i32); // Expect i32 on top of stack
+        abstractStack.popExpecting(ValType.I32); // Expect i32 on top of stack
         AbstractStackElement.ValueElement elem2 = abstractStack.popExpectingValue();
         AbstractStackElement.ValueElement elem1 = abstractStack.peekExpecting(elem2.valueType); // Expect 2 of the same type below it
         // If top of stack is not 0, pop. If it is 0, swap-pop.
@@ -1064,7 +1062,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     @Override public Void visitLocalGet(Instruction.LocalGet inst) {
         ValType type = code.locals.get(inst.localIndex());
         int mappedIndex = code.localMappings().get(inst.localIndex());
-        if (limiter.countsMemory && type instanceof ValType.RefType) {
+        if (limiter.countsMemory && type.isRef()) {
             // It's a reftype, let's track it for refcounting
             int nextSlot = abstractStack.nextLocalSlot();
             abstractStack.push(new AbstractStackElement.ValueElement(type, nextSlot));
@@ -1088,7 +1086,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         int mappedIndex = code.localMappings().get(inst.localIndex());
         abstractStack.pop(); // Modifies abstract stack
 
-        if (limiter.countsMemory && type instanceof ValType.RefType) {
+        if (limiter.countsMemory && type.isRef()) {
             // The object formerly in the local should be decremented:
             BytecodeHelper.loadLocal(visitor, mappedIndex, type);
             BytecodeHelper.debugPrintln(visitor, "DecRefCount - local set");
@@ -1104,7 +1102,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         ValType type = code.locals.get(inst.localIndex());
         int mappedIndex = code.localMappings().get(inst.localIndex());
 
-        if (limiter.countsMemory && type instanceof ValType.RefType) {
+        if (limiter.countsMemory && type.isRef()) {
             // The object formerly in the local should be decremented,
             // and the new object should be incremented.
             BytecodeHelper.loadLocal(visitor, mappedIndex, type);
@@ -1128,9 +1126,9 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         } else {
             int adjustedIndex = inst.globalIndex() - module.globalImports().size();
             ValType globalType = module.globals.get(adjustedIndex).globalType().valType();
-            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.desc());
+            visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.descriptor);
             // If tracking memory, store in local
-            if (limiter.countsMemory && globalType instanceof ValType.RefType) {
+            if (limiter.countsMemory && globalType.isRef()) {
                 int nextLocal = abstractStack.nextLocalSlot();
                 abstractStack.push(new AbstractStackElement.ValueElement(globalType, nextLocal));
                 // Increment refcount and store in local
@@ -1155,15 +1153,15 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             ValType globalType = module.globals.get(adjustedIndex).globalType().valType();
             abstractStack.pop();
 
-            if (limiter.countsMemory && globalType instanceof ValType.RefType) {
+            if (limiter.countsMemory && globalType.isRef()) {
                 // The object formerly in the global should be decremented:
-                visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.desc());
+                visitor.visitFieldInsn(Opcodes.GETSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.descriptor);
                 BytecodeHelper.debugPrintln(visitor, "DecRefCount - global set");
                 decrementRefCountOfTopElement();
             }
 
             // Store the field normally
-            visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.desc());
+            visitor.visitFieldInsn(Opcodes.PUTSTATIC, Compile.getClassName(moduleName), Compile.getGlobalName(adjustedIndex), globalType.descriptor);
         }
         return null;
     }
@@ -1178,10 +1176,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             elemType = module.tables.get(inst.tableIndex() - module.tableImports().size()).elementType();
         }
 
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
 
         // Stack = [index]
-        pushTable(inst.tableIndex(), elemType == ValType.funcref); // [index, table]
+        pushTable(inst.tableIndex(), elemType == ValType.FUNCREF); // [index, table]
         visitor.visitInsn(Opcodes.SWAP); // [table, index]
         visitor.visitInsn(Opcodes.AALOAD); // [table[index]]
 
@@ -1214,10 +1212,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
 
         abstractStack.popExpecting(elemType);
-        abstractStack.popExpecting(ValType.i32);
+        abstractStack.popExpecting(ValType.I32);
 
         // [index, elem]
-        pushTable(inst.tableIndex(), elemType == ValType.funcref); // [index, elem, table]
+        pushTable(inst.tableIndex(), elemType == ValType.FUNCREF); // [index, elem, table]
         visitor.visitInsn(Opcodes.DUP_X2); // [table, index, elem, table]
         visitor.visitInsn(Opcodes.POP); // [table, index, elem]
 
@@ -1259,7 +1257,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 //        }
 //
 //        ValType elementType = module.tables.get(inst.tableIndex()).elementType();
-//        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+//        String tableDescriptor = elementType == ValType.EXTERNREF ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 //        // Shuffle things around to get them in order for the arraycopy() call:
 //        visitor.visitVarInsn(Opcodes.ISTORE, abstractStack.nextLocalSlot()); // nextLocal = count, [dest, src]
 //        visitor.visitFieldInsn(Opcodes.GETSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor); // [dest, src, elem array]
@@ -1288,16 +1286,16 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 //        // Set the given elem field to null, freeing the memory.
 //        visitor.visitInsn(Opcodes.ACONST_NULL);
 //        ValType elementType = module.elements.get(inst.elemIndex()).type();
-//        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+//        String tableDescriptor = elementType == ValType.EXTERNREF ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 //        visitor.visitFieldInsn(Opcodes.PUTSTATIC, getClassName(moduleName), getElemFieldName(inst.elemIndex()), tableDescriptor);
 //        return null;
     }
 
     @Override public Void visitTableGrow(Instruction.TableGrow inst) {
 
-        abstractStack.popExpecting(ValType.i32);
-        abstractStack.popExpecting(ValType.funcref, ValType.externref);
-        abstractStack.push(new AbstractStackElement.ValueElement(ValType.i32, -1));
+        abstractStack.popExpecting(ValType.I32);
+        abstractStack.popExpecting(ValType.FUNCREF, ValType.EXTERNREF);
+        abstractStack.push(new AbstractStackElement.ValueElement(ValType.I32, -1));
 
         // [fillValue, requestedEntries]
 
@@ -1309,14 +1307,14 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitLabel(okay);
 
         ValType elementType = module.tables.get(inst.tableIndex()).elementType();
-        String tableDescriptor = elementType == ValType.externref ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
+        String tableDescriptor = elementType == ValType.EXTERNREF ? TABLE_DESCRIPTOR : FUNCREF_TABLE_DESCRIPTOR;
 
         // If counting instructions, then increment instruction counter by
         // currentSize + requestedEntries. This is to pay for the arraycopy + fill.
         if (limiter.countsInstructions) {
             // [fillValue, requestedEntries]
             visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, requestedEntries]
-            pushTable(inst.tableIndex(), elementType == ValType.funcref); // [fillValue, requestedEntries, requestedEntries, table]
+            pushTable(inst.tableIndex(), elementType == ValType.FUNCREF); // [fillValue, requestedEntries, requestedEntries, table]
             visitor.visitInsn(Opcodes.ARRAYLENGTH); // [fillValue, requestedEntries, requestedEntries, table.length]
             visitor.visitInsn(Opcodes.IADD); // [fillValue, requestedEntries, requestedEntries + table.length]
             visitor.visitInsn(Opcodes.I2L); // [fillValue, requestedEntries, (long) (requestedEntries + table.length)]
@@ -1333,31 +1331,31 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         }
 
         // Stack = [fillValue, requestedEntries]
-        pushTable(inst.tableIndex(), elementType == ValType.funcref); // [fillValue, requestedEntries, table]
+        pushTable(inst.tableIndex(), elementType == ValType.FUNCREF); // [fillValue, requestedEntries, table]
         visitor.visitInsn(Opcodes.DUP); // [fillValue, requestedEntries, table, table]
         visitor.visitInsn(Opcodes.ARRAYLENGTH); // [fillValue, requestedEntries, table, table.length]
-        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [fillValue, requestedEntries, table]. Locals = [table.length]
+        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [fillValue, requestedEntries, table]. Locals = [table.length]
         visitor.visitInsn(Opcodes.SWAP); // [fillValue, table, requestedEntries]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [fillValue, table, requestedEntries, table.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [fillValue, table, requestedEntries, table.length]
         visitor.visitInsn(Opcodes.IADD); // [fillValue, table, newTableLength]
         visitor.visitInsn(Opcodes.DUP); // [fillValue, table, newTableLength, newTableLength]
-        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + 1, ValType.i32); // [fillValue, table, newTableLength], locals = [table.length, newTableLength]
+        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + 1, ValType.I32); // [fillValue, table, newTableLength], locals = [table.length, newTableLength]
         //TODO: Check for overflow, or mem usage too high, and output -1
         visitor.visitTypeInsn(Opcodes.ANEWARRAY, tableDescriptor.substring(2, tableDescriptor.length() - 1)); // [fillValue, table, newTable]
         BytecodeHelper.constInt(visitor, 0); // [fillValue, table, newTable, 0]
         visitor.visitInsn(Opcodes.SWAP); // [fillValue, table, 0, newTable]
         visitor.visitInsn(Opcodes.DUP_X2); // [fillValue, newTable, table, 0, newTable]
         BytecodeHelper.constInt(visitor, 0); // [fillValue, newTable, table, 0, newTable, 0]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [fillValue, newTable, table, 0, newTable, 0, table.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [fillValue, newTable, table, 0, newTable, 0, table.length]
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false); // [fillValue, newTable]
         visitor.visitInsn(Opcodes.DUP_X1); // [newTable, fillValue, newTable]
-        storeTable(inst.tableIndex(), elementType == ValType.funcref); // [newTable, fillValue]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [newTable, fillValue, table.length]
+        storeTable(inst.tableIndex(), elementType == ValType.FUNCREF); // [newTable, fillValue]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [newTable, fillValue, table.length]
         visitor.visitInsn(Opcodes.SWAP); // [newTable, table.length, fillValue]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + 1, ValType.i32); // [newTable, table.length, fillValue, newTableLength]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + 1, ValType.I32); // [newTable, table.length, fillValue, newTableLength]
         visitor.visitInsn(Opcodes.SWAP); // [newTable, table.length, newTableLength, fillValue]
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Arrays.class), "fill", "([Ljava/lang/Object;IILjava/lang/Object;)V", false); // []
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [table.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [table.length]
         return null;
     }
 
@@ -1365,7 +1363,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         abstractStack.applyStackType(inst.stackType());
 
         ValType elementType = module.tables.get(inst.tableIndex()).elementType();
-        pushTable(inst.tableIndex(), elementType == ValType.funcref); // [table]
+        pushTable(inst.tableIndex(), elementType == ValType.FUNCREF); // [table]
         visitor.visitInsn(Opcodes.ARRAYLENGTH); // [table.length]
         return null;
     }
@@ -1395,10 +1393,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             // [index], locals = []
             BytecodeHelper.constInt(visitor, offset); // [index, offset], locals = []
             visitor.visitInsn(Opcodes.IADD); // [index + offset], locals = []
-            BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [], locals = [index + offset]
+            BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [], locals = [index + offset]
             visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryVarHandleName(typeDesc), Type.getDescriptor(VarHandle.class)); // [VarHandle], locals = [index + offset]
             pushMemory(memIndex); // [VarHandle, memArray], locals = [index + offset]
-            BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [VarHandle, memArray, index + offset]
+            BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [VarHandle, memArray, index + offset]
             visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(VarHandle.class), "get", "([BI)" + typeDesc, false); // memArray[index + offset] as <type>
         }
     }
@@ -1406,22 +1404,22 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitI32Load(Instruction.I32Load inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.i32.desc(), inst.offset());
+        loadPrimitive(ValType.I32.descriptor, inst.offset());
         return null;
     }
     @Override public Void visitI64Load(Instruction.I64Load inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.i64.desc(), inst.offset());
+        loadPrimitive(ValType.I64.descriptor, inst.offset());
         return null;
     }
     @Override public Void visitF32Load(Instruction.F32Load inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.f32.desc(), inst.offset());
+        loadPrimitive(ValType.F32.descriptor, inst.offset());
         return null;
     }
     @Override public Void visitF64Load(Instruction.F64Load inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.f64.desc(), inst.offset());
+        loadPrimitive(ValType.F64.descriptor, inst.offset());
         return null;
     }
     @Override public Void visitI32Load8S(Instruction.I32Load8S inst) {
@@ -1478,13 +1476,13 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
     }
     @Override public Void visitI64Load32S(Instruction.I64Load32S inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.i32.desc(), inst.offset());
+        loadPrimitive(ValType.I32.descriptor, inst.offset());
         visitor.visitInsn(Opcodes.I2L);
         return null;
     }
     @Override public Void visitI64Load32U(Instruction.I64Load32U inst) {
         abstractStack.applyStackType(inst.stackType());
-        loadPrimitive(ValType.i32.desc(), inst.offset());
+        loadPrimitive(ValType.I32.descriptor, inst.offset());
         visitor.visitInsn(Opcodes.I2L);
         BytecodeHelper.constLong(visitor, 0xFFFFFFFFL);
         visitor.visitInsn(Opcodes.LAND);
@@ -1493,7 +1491,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     // Will need to change memIndex in the future if multiple memories are implemented
     // "wasmType" is the corresponding type in wasm for this type.
-    // For example if you want to use a java byte, choose wasmType = ValType.i32.
+    // For example if you want to use a java byte, choose wasmType = ValType.I32.
     private void storePrimitive(String typeDesc, ValType wasmType, int offset, int memIndex) {
         String className = Compile.getClassName(moduleName);
         if (typeDesc.equals("B")) {
@@ -1513,10 +1511,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
             BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), wasmType); // [index], locals = [value]
             BytecodeHelper.constInt(visitor, offset); // [index, offset], locals = [value]
             visitor.visitInsn(Opcodes.IADD); // [index + offset], locals = [value]
-            BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots(), ValType.i32); // [], locals = [value, index + offset]
+            BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots, ValType.I32); // [], locals = [value, index + offset]
             visitor.visitFieldInsn(Opcodes.GETSTATIC, className, Compile.getMemoryVarHandleName(typeDesc), Type.getDescriptor(VarHandle.class)); // [VarHandle], locals = [value, index + offset]
             pushMemory(memIndex); // [VarHandle, memArray], locals = [value, index + offset]
-            BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots(), ValType.i32); // [VarHandle, memArray, index + offset], locals = [value]
+            BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot() + wasmType.stackSlots, ValType.I32); // [VarHandle, memArray, index + offset], locals = [value]
             BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), wasmType); // [VarHandle, memArray, index + offset, value], locals = []
             visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(VarHandle.class), "set", "([BI" + typeDesc + ")V", false); // Stack = []. memArray[index + offset] is now value.
         }
@@ -1525,36 +1523,36 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
 
     @Override public Void visitI32Store(Instruction.I32Store inst) {
         abstractStack.applyStackType(inst.stackType());
-        storePrimitive(ValType.i32.desc(), ValType.i32, inst.offset());
+        storePrimitive(ValType.I32.descriptor, ValType.I32, inst.offset());
         return null;
     }
     @Override public Void visitI64Store(Instruction.I64Store inst) {
         abstractStack.applyStackType(inst.stackType());
-        storePrimitive(ValType.i64.desc(), ValType.i64, inst.offset());
+        storePrimitive(ValType.I64.descriptor, ValType.I64, inst.offset());
         return null;
     }
     @Override public Void visitF32Store(Instruction.F32Store inst) {
         abstractStack.applyStackType(inst.stackType());
-        storePrimitive(ValType.f32.desc(), ValType.f32, inst.offset());
+        storePrimitive(ValType.F32.descriptor, ValType.F32, inst.offset());
         return null;
     }
     @Override public Void visitF64Store(Instruction.F64Store inst) {
         abstractStack.applyStackType(inst.stackType());
-        storePrimitive(ValType.f64.desc(), ValType.f64, inst.offset());
+        storePrimitive(ValType.F64.descriptor, ValType.F64, inst.offset());
         return null;
     }
     @Override public Void visitI32Store8(Instruction.I32Store8 inst) {
         abstractStack.applyStackType(inst.stackType());
         BytecodeHelper.constInt(visitor, 0xFF);
         visitor.visitInsn(Opcodes.IAND);
-        storePrimitive("B", ValType.i32, inst.offset());
+        storePrimitive("B", ValType.I32, inst.offset());
         return null;
     }
     @Override public Void visitI32Store16(Instruction.I32Store16 inst) {
         abstractStack.applyStackType(inst.stackType());
         BytecodeHelper.constInt(visitor, 0xFFFF);
         visitor.visitInsn(Opcodes.IAND);
-        storePrimitive("S", ValType.i32, inst.offset());
+        storePrimitive("S", ValType.I32, inst.offset());
         return null;
     }
     @Override public Void visitI64Store8(Instruction.I64Store8 inst) {
@@ -1562,7 +1560,7 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.L2I);
         BytecodeHelper.constInt(visitor, 0xFF);
         visitor.visitInsn(Opcodes.IAND);
-        storePrimitive("B", ValType.i32, inst.offset());
+        storePrimitive("B", ValType.I32, inst.offset());
         return null;
     }
     @Override public Void visitI64Store16(Instruction.I64Store16 inst) {
@@ -1570,13 +1568,13 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.L2I);
         BytecodeHelper.constInt(visitor, 0xFFFF);
         visitor.visitInsn(Opcodes.IAND);
-        storePrimitive("S", ValType.i32, inst.offset());
+        storePrimitive("S", ValType.I32, inst.offset());
         return null;
     }
     @Override public Void visitI64Store32(Instruction.I64Store32 inst) {
         abstractStack.applyStackType(inst.stackType());
         visitor.visitInsn(Opcodes.L2I);
-        storePrimitive(ValType.i32.desc(), ValType.i32, inst.offset());
+        storePrimitive(ValType.I32.descriptor, ValType.I32, inst.offset());
         return null;
     }
 
@@ -1625,9 +1623,9 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         pushMemory(0); // [requestedPages * pageSize, memArray]
         visitor.visitInsn(Opcodes.DUP); // [requestedPages * pageSize, memArray, memArray]
         visitor.visitInsn(Opcodes.ARRAYLENGTH); // [requestedPages * pageSize, memArray, memArray.length]
-        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [requestedPages * pageSize, memArray]. Locals = [memArray.length]
+        BytecodeHelper.storeLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [requestedPages * pageSize, memArray]. Locals = [memArray.length]
         visitor.visitInsn(Opcodes.SWAP); // [memArray, requestedPages * pageSize]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [memArray, requestedPages * pageSize, memArray.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [memArray, requestedPages * pageSize, memArray.length]
         visitor.visitInsn(Opcodes.IADD); // [memArray, requestedPages * pageSize + memArray.length]
         //TODO: Check for overflow, or mem usage too high, and output -1
         visitor.visitIntInsn(Opcodes.NEWARRAY, Opcodes.T_BYTE); // [memArray, newArray]
@@ -1635,10 +1633,10 @@ public class MethodWritingVisitor extends InstructionVisitor<Void> {
         visitor.visitInsn(Opcodes.SWAP); // [memArray, 0, newArray]
         visitor.visitInsn(Opcodes.DUP_X2); // [newArray, memArray, 0, newArray]
         BytecodeHelper.constInt(visitor, 0); // [newArray, memArray, 0, newArray, 0]
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [newArray, memArray, 0, newArray, 0, memArray.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [newArray, memArray, 0, newArray, 0, memArray.length]
         visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false); // [newArray]
         storeMemory(0); // []
-        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.i32); // [memArray.length]
+        BytecodeHelper.loadLocal(visitor, abstractStack.nextLocalSlot(), ValType.I32); // [memArray.length]
         BytecodeHelper.constInt(visitor, Compile.WASM_PAGE_SIZE); // [memArray.length, PAGE_SIZE]
         visitor.visitInsn(Opcodes.IDIV); // [memArray.length / PAGE_SIZE]
         return null;

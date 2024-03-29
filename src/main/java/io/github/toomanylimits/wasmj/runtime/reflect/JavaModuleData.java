@@ -139,7 +139,7 @@ public class JavaModuleData<T> {
                 // Load the param
                 ValType valtype = BytecodeHelper.wasmType(glueParam);
                 BytecodeHelper.loadLocal(visitor, localIndex, valtype); // Load the local
-                localIndex += valtype.stackSlots();
+                localIndex += valtype.stackSlots;
                 if (isGluedType(glueParam)) {
                     // If it's glued, use instanceof to ensure type
                     Label end = new Label();

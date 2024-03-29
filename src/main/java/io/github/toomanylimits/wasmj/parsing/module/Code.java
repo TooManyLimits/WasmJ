@@ -28,7 +28,7 @@ public class Code {
         if (nextLocalSlotCache == -1) {
             nextLocalSlotCache = 0;
             for (ValType local : locals)
-                nextLocalSlotCache += local.stackSlots();
+                nextLocalSlotCache += local.stackSlots;
         }
         return nextLocalSlotCache;
     }
@@ -39,7 +39,7 @@ public class Code {
             int i = 0;
             for (ValType local : locals) {
                 localMappingsCache.add(i);
-                i += local.stackSlots();
+                i += local.stackSlots;
             }
         }
         return localMappingsCache;

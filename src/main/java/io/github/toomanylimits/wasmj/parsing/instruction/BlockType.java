@@ -3,7 +3,6 @@ package io.github.toomanylimits.wasmj.parsing.instruction;
 import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
-import io.github.toomanylimits.wasmj.util.ListUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -37,13 +36,13 @@ public sealed interface BlockType {
         long b = stream.read();
         return switch ((int) b) {
             case 0x40 -> EmptyBlockType.INSTANCE;
-            case 0x7F -> new ValueBlockType(ValType.i32);
-            case 0x7E -> new ValueBlockType(ValType.i64);
-            case 0x7D -> new ValueBlockType(ValType.f32);
-            case 0x7C -> new ValueBlockType(ValType.f64);
-            case 0x7B -> new ValueBlockType(ValType.v128);
-            case 0x70 -> new ValueBlockType(ValType.funcref);
-            case 0x6F -> new ValueBlockType(ValType.externref);
+            case 0x7F -> new ValueBlockType(ValType.I32);
+            case 0x7E -> new ValueBlockType(ValType.I64);
+            case 0x7D -> new ValueBlockType(ValType.F32);
+            case 0x7C -> new ValueBlockType(ValType.F64);
+            case 0x7B -> new ValueBlockType(ValType.V128);
+            case 0x70 -> new ValueBlockType(ValType.FUNCREF);
+            case 0x6F -> new ValueBlockType(ValType.EXTERNREF);
             default -> {
                 //Weird hack, since this is a place in the WASM spec where
                 //we would ordinarily need to backtrack or peek. So we use this
