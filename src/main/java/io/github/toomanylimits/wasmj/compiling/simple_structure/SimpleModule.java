@@ -69,7 +69,7 @@ public class SimpleModule {
                 String exportedAs = exportedFuncs.get(i);
                 if (exportedAs != null)
                     throw new UnsupportedOperationException("Cannot re-export imported java functions! Module \"" + moduleName + "\" tried to export ( " + funcImport.moduleName + " . " + funcImport.elementName + ") as \"" + exportedAs + "\"");
-                this.functions[i] = new SimpleFunction.ImportedJavaFunction(i, funcType, javaModuleData, methodData);
+                this.functions[i] = new SimpleFunction.ImportedJavaFunction(i, funcType, importModule, javaModuleData, methodData);
             } else {
                 // It's an imported WASM function
                 String exportedAs = exportedFuncs.get(i);

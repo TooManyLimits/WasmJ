@@ -125,7 +125,7 @@ public interface SimpleFunction {
      * A function defined in a java module that's been imported
      * to this module
      */
-    record ImportedJavaFunction(int funcImportIndex, StackType funcType, JavaModuleData<?> moduleData, JavaModuleData.MethodData methodData) implements SimpleFunction {
+    record ImportedJavaFunction(int funcImportIndex, StackType funcType, String javaModuleName, JavaModuleData<?> moduleData, JavaModuleData.MethodData methodData) implements SimpleFunction {
         @Override
         public void emitCall(SimpleModule callingModule, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor) {
             // Fetch the byte[] and/or the limiter, if the function needs them
@@ -162,7 +162,7 @@ public interface SimpleFunction {
         public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
             // Only thing to do is emit glue if necessary.
             if (methodData.needsGlue()) {
-                methodData.writeGlue(classWriter, Names.glueFuncName(funcImportIndex), declaringModule.moduleName, moduleData.className(), declaringModule.instance.limiter.countsMemory);
+                methodData.writeGlue(classWriter, Names.glueFuncName(funcImportIndex), declaringModule.moduleName, javaModuleName, declaringModule.instance.limiter.countsMemory);
             }
         }
 
