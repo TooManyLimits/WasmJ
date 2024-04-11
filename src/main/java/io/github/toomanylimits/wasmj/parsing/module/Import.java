@@ -1,9 +1,9 @@
 package io.github.toomanylimits.wasmj.parsing.module;
 
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 import io.github.toomanylimits.wasmj.parsing.types.GlobalType;
 import io.github.toomanylimits.wasmj.parsing.types.Limits;
 import io.github.toomanylimits.wasmj.parsing.types.TableType;
-import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.IOException;
 import java.io.InputStream;

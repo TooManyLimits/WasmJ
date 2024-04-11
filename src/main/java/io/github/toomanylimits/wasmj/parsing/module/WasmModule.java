@@ -1,10 +1,11 @@
 package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.parsing.types.FuncType;
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
+import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
+import io.github.toomanylimits.wasmj.parsing.types.GlobalType;
 import io.github.toomanylimits.wasmj.parsing.types.Limits;
 import io.github.toomanylimits.wasmj.parsing.types.TableType;
 import io.github.toomanylimits.wasmj.util.ListUtils;
-import io.github.toomanylimits.wasmj.parsing.ParseHelper;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -13,7 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public class WasmModule {
-    public final List<FuncType> types;
+    public final List<StackType> types;
     public final List<Import> imports;
     public final List<Integer> functions;
     public final List<TableType> tables;
@@ -33,7 +34,7 @@ public class WasmModule {
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
         if (section == 1) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
-            types = ParseHelper.readVector(stream, FuncType::read);
+            types = ParseHelper.readVector(stream, StackType::readFuncType);
             section = stream.read();
         } else types = List.of();
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
@@ -63,7 +64,7 @@ public class WasmModule {
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
         if (section == 6) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
-            globals = ParseHelper.readVector(stream, Global::read);
+            globals = ParseHelper.readVector(stream, i -> Global.read(i, types, imports));
             section = stream.read();
         } else globals = List.of();
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
@@ -81,7 +82,7 @@ public class WasmModule {
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
         if (section == 9) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
-            elements = ParseHelper.readVector(stream, Element::read);
+            elements = ParseHelper.readVector(stream, i -> Element.read(i, types, imports));
             section = stream.read();
         } else elements = List.of();
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
@@ -99,7 +100,7 @@ public class WasmModule {
         while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
         if (section == 11) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
-            datas = ParseHelper.readVector(stream, Data::read);
+            datas = ParseHelper.readVector(stream, i -> Data.read(i, types, imports));
             section = stream.read();
         } else datas = List.of();
         while (section == 0) {
@@ -118,8 +119,7 @@ public class WasmModule {
         }
     }
 
-    // Helpers with cached, filtered lists of the different varieties
-
+    // Helpers!
     private List<Import.Func> funcImportsCache = null;
     public List<Import.Func> funcImports() {
         if (funcImportsCache == null)
@@ -143,6 +143,32 @@ public class WasmModule {
         if (globalImportsCache == null)
             globalImportsCache = ListUtils.map(ListUtils.filter(imports, it -> it instanceof Import.Global), it -> (Import.Global) it);
         return globalImportsCache;
+    }
+
+    // Gets the type of the function at the given defaultIndex, taking imports into account
+    public StackType getFunctionType(int funcIndex) {
+        if (funcIndex < funcImports().size()) {
+            return types.get(funcImports().get(funcIndex).typeIndex);
+        } else {
+            int adjustedIndex = funcIndex - funcImports().size();
+            return types.get(functions.get(adjustedIndex));
+        }
+    }
+    public GlobalType getGlobalType(int globalIndex) {
+        if (globalIndex < globalImports().size()) {
+            return globalImports().get(globalIndex).globalType;
+        } else {
+            int adjustedIndex = globalIndex - globalImports().size();
+            return globals.get(adjustedIndex).globalType();
+        }
+    }
+    public TableType getTableType(int tableIndex) {
+        if (tableIndex < tableImports().size()) {
+            return tableImports().get(tableIndex).type;
+        } else {
+            int adjustedIndex = tableIndex - tableImports().size();
+            return tables.get(adjustedIndex);
+        }
     }
 
 }

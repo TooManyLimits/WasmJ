@@ -9,12 +9,12 @@ import java.io.InputStream;
 public class Main {
     public static void main(String[] args) throws Throwable {
 
-        InputStream inStream = Main.class.getResourceAsStream("test_counter.wasm");
+        InputStream inStream = Main.class.getResourceAsStream("test_dog.wasm");
         if (inStream == null)
             throw new IllegalStateException("could not find wasm file");
         WasmModule module = new WasmModule(inStream);
 
-        WasmInstance instance = new WasmInstance(Long.MAX_VALUE, 1_500_000);
+        WasmInstance instance = new WasmInstance(-1, -1);
 //        instance.addJavaModule("WasmJ", WasmJImpl.class, null); // Add WasmJ impl
         instance.addTypeModule("dog", WasmJImpl.Dog.class); // Test dog module
         instance.addStaticJavaModule("WasmJ", WasmJImpl.class); // Add WasmJ
@@ -22,7 +22,7 @@ public class Main {
         instance.addWasmModule("aaa", module); // Compiled wasm module
 
         // Testing code
-        ExportedFunction function = instance.getExportedFunction("aaa", "test_counter");
+        ExportedFunction function = instance.getExportedFunction("aaa", "test_dog");
         long start = System.nanoTime();
         function.invoke();
         long end = System.nanoTime();

@@ -9,9 +9,18 @@ import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 @FunctionalInterface
 public interface ExportedFunction {
 
-    Object[] invoke_impl(Object... args) throws Throwable;
+    /**
+     * Returns one of:
+     * - null (zero return values)
+     * - Object (one return value)
+     * - Object[] (multiple return values)
+     */
+    Object invoke_impl(Object... args) throws Throwable;
 
-    default Object[] invoke(Object... args) throws WasmException {
+    /**
+     * Helper that wraps all exceptions into WasmException.
+     */
+    default Object invoke(Object... args) throws WasmException {
         try {
             return invoke_impl(args);
         } catch (WasmException e) {

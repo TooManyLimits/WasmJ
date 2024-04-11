@@ -1,9 +1,9 @@
 package io.github.toomanylimits.wasmj.parsing.module;
 
-import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
-import io.github.toomanylimits.wasmj.parsing.types.FuncType;
-import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.parsing.ParseHelper;
+import io.github.toomanylimits.wasmj.parsing.instruction.Expression;
+import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
+import io.github.toomanylimits.wasmj.parsing.types.ValType;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -46,14 +46,12 @@ public class Code {
     }
 
     // Requires passing additional data:
-    // The index of this code, the list of all types in this module, and the list of all funcs in this module.
-    public static Code read(int index, List<FuncType> types, List<Integer> funcs, InputStream stream) throws IOException, ModuleParseException {
+    // The defaultIndex of this code, the list of all types in this module, and the list of all funcs in this module.
+    public static Code read(int index, List<StackType> moduleTypes, List<Integer> funcs, InputStream stream) throws IOException, ModuleParseException {
         int size = ParseHelper.readUnsignedWasmInt(stream);
         int numLocalObjs = ParseHelper.readUnsignedWasmInt(stream);
-        ArrayList<ValType> locals = new ArrayList<>();
         // Add func params as locals
-        for (ValType type : types.get(funcs.get(index)).args)
-            locals.add(type);
+        ArrayList<ValType> locals = new ArrayList<>(moduleTypes.get(funcs.get(index)).inTypes());
         // Add declared locals
         for (int i = 0; i < numLocalObjs; i++) {
             int count = ParseHelper.readUnsignedWasmInt(stream);
@@ -61,7 +59,7 @@ public class Code {
             for (int j = 0; j < count; j++)
                 locals.add(type);
         }
-        Expression expr = Expression.read(stream);
+        Expression expr = Expression.read(stream, moduleTypes);
         locals.trimToSize();
         return new Code(size, index, locals, expr);
     }

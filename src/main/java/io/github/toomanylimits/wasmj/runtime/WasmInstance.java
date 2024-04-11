@@ -1,9 +1,15 @@
 package io.github.toomanylimits.wasmj.runtime;
 
-import io.github.toomanylimits.wasmj.compiler.Compile;
+import io.github.toomanylimits.wasmj.compiling.compiler.Compiler;
+import io.github.toomanylimits.wasmj.compiling.helpers.Names;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
+import io.github.toomanylimits.wasmj.compiling.simplify.Validator;
 import io.github.toomanylimits.wasmj.parsing.module.WasmModule;
+import io.github.toomanylimits.wasmj.runtime.errors.JvmCodeError;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
@@ -23,7 +29,7 @@ public class WasmInstance {
     public final InstanceLimiter limiter;
 
     private final Set<String> wasmModuleNames = new HashSet<>();
-    private final Map<String, JavaModuleData<?>> javaModuleData = new HashMap<>();
+    public final Map<String, JavaModuleData<?>> instanceJavaModules = new HashMap<>();
 
     // The parameters to this are just used to create an InstanceLimiter for sandboxing.
     // Check InstanceLimiter for information on them.
@@ -32,18 +38,24 @@ public class WasmInstance {
         limiter = new InstanceLimiter(maxInstructions, maxJvmHeapMemory);
     }
 
-    public void addWasmModule(String moduleName, WasmModule module) {
-        if (wasmModuleNames.contains(moduleName) || javaModuleData.containsKey(moduleName))
+    public void addWasmModule(String moduleName, WasmModule module) throws Validator.ValidationException, WasmException {
+        if (wasmModuleNames.contains(moduleName) || instanceJavaModules.containsKey(moduleName))
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         wasmModuleNames.add(moduleName);
         // Compile the module and add it to the custom classloader
-        byte[] compiled = Compile.compileModule(javaModuleData, limiter, moduleName, module);
-        loader.classes.put(Compile.getClassName(moduleName), compiled);
-        // Get the wasm class and call the init method
+        SimpleModule simple = new SimpleModule(moduleName, module, this);
+        byte[] compiled = Compiler.compile(simple);
+        loader.classes.put(Names.className(moduleName), compiled);
+        // Get the wasm class and call the init method.
         try {
             Class<?> c = getWasmClass(moduleName);
-            c.getDeclaredMethod(Compile.getInitMethodName(), InstanceLimiter.class, Map.class, WasmModule.class).invoke(null, limiter, javaModuleData, module);
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
+            c.getDeclaredMethod(Names.initMethodName(), InstanceLimiter.class, Map.class, SimpleModule.class).invoke(null, limiter, instanceJavaModules, simple); // Throws WasmException
+        } catch (InvocationTargetException e) {
+            // Re-wrap it as a WASM exception if needed
+            if (e.getTargetException() instanceof WasmException ex)
+                throw ex;
+            throw new JvmCodeError(e.getTargetException());
+        } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new IllegalStateException("Failed to locate/call init method? Should always succeed!", e);
         }
     }
@@ -56,11 +68,11 @@ public class WasmInstance {
      * Non-static methods are invoked on the provided T instance.
      */
     public <T> void addGlobalInstanceJavaModule(String moduleName, Class<T> moduleClass, T instance) {
-        if (javaModuleData.containsKey(moduleName))
+        if (instanceJavaModules.containsKey(moduleName))
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         if (!wasmModuleNames.isEmpty())
             throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
-        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, instance));
+        instanceJavaModules.put(moduleName, new JavaModuleData<>(moduleClass, instance));
     }
 
     /**
@@ -72,11 +84,11 @@ public class WasmInstance {
      * is no instance to call them on.
      */
     public void addStaticJavaModule(String moduleName, Class<?> moduleClass) {
-        if (javaModuleData.containsKey(moduleName))
+        if (instanceJavaModules.containsKey(moduleName))
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         if (!wasmModuleNames.isEmpty())
             throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
-        javaModuleData.put(moduleName, new JavaModuleData<>(moduleClass, null));
+        instanceJavaModules.put(moduleName, new JavaModuleData<>(moduleClass, null));
     }
 
     /**
@@ -98,11 +110,11 @@ public class WasmInstance {
      * inc_value(TypeToReflect/externref) -> void
      */
     public <T> void addTypeModule(String moduleName, Class<T> typeToReflect) {
-        if (javaModuleData.containsKey(moduleName))
+        if (instanceJavaModules.containsKey(moduleName))
             throw new IllegalArgumentException("There is already a module named \"" + moduleName + "\" in this wasm instance");
         if (!wasmModuleNames.isEmpty())
             throw new UnsupportedOperationException("All java modules must be added to an instance before any WASM modules are added");
-        javaModuleData.put(moduleName, new JavaModuleData<>(typeToReflect));
+        instanceJavaModules.put(moduleName, new JavaModuleData<>(typeToReflect));
     }
 
     /**
@@ -113,7 +125,7 @@ public class WasmInstance {
         if (!wasmModuleNames.contains(wasmModuleName))
             return null; // throw new IllegalArgumentException("No WASM module with name \"" + wasmModuleName + "\" was added to this instance");
         try {
-            return loader.loadClass(Compile.getClassName(wasmModuleName).replace('/', '.'));
+            return loader.loadClass(Names.className(wasmModuleName).replace('/', '.'));
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("The class \"" + wasmModuleName + "\" was added to the instance, but could not be found in the class loader? Internal bug!", e);
         }
@@ -124,12 +136,29 @@ public class WasmInstance {
      * If there is no such function, returns null.
      */
     public ExportedFunction getExportedFunction(String wasmModuleName, String exportName) {
+        // Find the Method
         Class<?> wasmClass = getWasmClass(wasmModuleName);
         if (wasmClass == null) return null;
-        String desiredName = Compile.getJavaExportFuncName(exportName);
+        String desiredName = Names.exportFuncName(exportName);
         Method m = ListUtils.first(Arrays.asList(wasmClass.getDeclaredMethods()), me -> me.getName().equals(desiredName));
         if (m == null) return null;
-        return args -> (Object[]) m.invoke(null, args);
+        // If we count memory, decrement ref-counts
+        if (limiter.countsMemory) {
+            return args -> {
+                Object res = m.invoke(null, args);
+                // Decrement ref counts if the results are refcountable
+                if (res instanceof RefCountable refCountable)
+                    refCountable.dec(limiter);
+                else
+                    for (Object o : (Object[]) res)
+                        if (o instanceof RefCountable refCountable)
+                            refCountable.dec(limiter);
+                return res;
+            };
+        } else {
+            return args -> m.invoke(null, args);
+        }
+
     }
 
     /**

@@ -1,112 +1,79 @@
 package io.github.toomanylimits.wasmj.parsing.instruction;
 
+import io.github.toomanylimits.wasmj.parsing.ParseHelper;
+import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
-import io.github.toomanylimits.wasmj.util.ListUtils;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 
-public sealed interface StackType {
+public record StackType(List<ValType> inTypes, List<ValType> outTypes) {
 
-    List<ValType> inTypes();
-    List<ValType> outTypes();
+    public static final StackType NOP = new StackType(List.of(), List.of());
 
-    // Return a stack type which does the opposite of this one.
-    // For example, if this pops an f32, then an i32, then pushes
-    // an externref, then an i64:
-    // The inverse will pop an i64, then an externref, then push
-    // an i32, then push an f32.
-    default StackType inverse() {
-        if (this == SPECIAL)
-            return SPECIAL;
-        return new StackType.Basic(ListUtils.reversed(outTypes()), ListUtils.reversed(inTypes()));
+    public String descriptor() {
+        StringBuilder res = new StringBuilder("(");
+        for (ValType arg : inTypes)
+            res.append(arg.descriptor);
+        res.append(")");
+        switch (outTypes.size()) {
+            case 0 -> res.append("V"); // 0 returns = void
+            case 1 -> res.append(outTypes.get(0).descriptor); // 1 return = that value type
+            default -> res.append("[Ljava/lang/Object;"); // Multiple returns = Object[]
+        }
+        return res.toString();
     }
 
-
-    // Special: when this instruction doesn't always have the same stack type.
-    // Must be handled specially!
-    StackType SPECIAL = new Basic(null, null);
-    final class Special implements StackType {
-        public List<ValType> inTypes() { throw new UnsupportedOperationException(); }
-        public List<ValType> outTypes() { throw new UnsupportedOperationException(); }
+    public static StackType readFuncType(InputStream stream) throws IOException, ModuleParseException {
+        int header = stream.read();
+        if (header != 0x60)
+            throw new ModuleParseException("Expected functype, did not find 0x60 byte. Got " + header);
+        List<ValType> args = ParseHelper.readVector(stream, ValType::read);
+        List<ValType> results = ParseHelper.readVector(stream, ValType::read);
+        return new StackType(args, results);
     }
-    record Basic(List<ValType> inTypes, List<ValType> outTypes) implements StackType { }
 
-    StackType nop = consume();
+    /**
+     * Read a Block Type out as a StackType.
+     */
+    public static StackType readBlockType(InputStream stream, List<StackType> moduleTypes) throws IOException, ModuleParseException {
+        long b = stream.read();
+        return switch ((int) b) {
+            case 0x40 -> new StackType(List.of(), List.of());
+            case 0x7F -> new StackType(List.of(), List.of(ValType.I32));
+            case 0x7E -> new StackType(List.of(), List.of(ValType.I64));
+            case 0x7D -> new StackType(List.of(), List.of(ValType.F32));
+            case 0x7C -> new StackType(List.of(), List.of(ValType.F64));
+            case 0x7B -> new StackType(List.of(), List.of(ValType.V128));
+            case 0x70 -> new StackType(List.of(), List.of(ValType.FUNCREF));
+            case 0x6F -> new StackType(List.of(), List.of(ValType.EXTERNREF));
+            default -> {
+                //Weird hack, since this is a place in the WASM spec where
+                //we would ordinarily need to backtrack or peek. So we use this
+                //strange workaround method to prevent it.
+                long result = 0L;
+                int shift = 0;
+                boolean readAlready = false;
+                do {
+                    if (shift > 4 * 7)
+                        throw new ModuleParseException("Failed to read signed WASM integer - int too long!");
+                    if (readAlready)
+                        b = stream.read();
+                    readAlready = true;
+                    result = result | ((b & 0x7FL) << shift);
+                    shift += 7;
+                } while ((b & 0x80L) != 0L);
 
-    StackType i32_i32 = unop(ValType.I32);
-    StackType i64_i64 = unop(ValType.I64);
-    StackType f32_f32 = unop(ValType.F32);
-    StackType f64_f64 = unop(ValType.F64);
-    StackType v128_v128 = unop(ValType.V128);
-
-    StackType i32_ = consume(ValType.I32);
-    StackType i32i32_ = consume(ValType.I32, ValType.I32);
-    StackType i32i32i32_ = consume(ValType.I32, ValType.I32, ValType.I32);
-    StackType i32i64_ = consume(ValType.I32, ValType.I64);
-    StackType i32f32_ = consume(ValType.I32, ValType.F32);
-    StackType i32f64_ = consume(ValType.I32, ValType.F64);
-    StackType i32v128_ = consume(ValType.I32, ValType.V128);
-
-    StackType i32v128_v128 = new Basic(List.of(ValType.I32, ValType.V128), List.of(ValType.V128));
-    StackType v128v128v128_v128 = new Basic(List.of(ValType.V128, ValType.V128, ValType.V128), List.of(ValType.V128));
-
-    StackType v128i32_v128 = replacelane(ValType.I32);
-    StackType v128i64_v128 = replacelane(ValType.I64);
-    StackType v128f32_v128 = replacelane(ValType.F32);
-    StackType v128f64_v128 = replacelane(ValType.F64);
-
-    StackType _i32 = produce(ValType.I32);
-    StackType _i64 = produce(ValType.I64);
-    StackType _f32 = produce(ValType.F32);
-    StackType _f64 = produce(ValType.F64);
-    StackType _funcref = produce(ValType.FUNCREF);
-    StackType _externref = produce(ValType.EXTERNREF);
-    StackType _v128 = produce(ValType.V128);
-
-    StackType i32i32_i32 = binop(ValType.I32);
-    StackType i64i64_i64 = binop(ValType.I64);
-    StackType f32f32_f32 = binop(ValType.F32);
-    StackType f64f64_f64 = binop(ValType.F64);
-    StackType v128v128_v128 = binop(ValType.V128);
-
-    StackType i64i64_i32 = bicompare(ValType.I64);
-    StackType f32f32_i32 = bicompare(ValType.F32);
-    StackType f64f64_i32 = bicompare(ValType.F64);
-    StackType v128v128_i32 = bicompare(ValType.V128);
-
-    StackType i64_i32 = ab(ValType.I64, ValType.I32);
-    StackType f32_i32 = ab(ValType.F32, ValType.I32);
-    StackType f64_i32 = ab(ValType.F64, ValType.I32);
-    StackType v128_i32 = ab(ValType.V128, ValType.I32);
-    StackType ref_i32 = ab(ValType.EXTERNREF, ValType.I32);
-
-    StackType i32_i64 = ab(ValType.I32, ValType.I64);
-    StackType f32_i64 = ab(ValType.F32, ValType.I64);
-    StackType f64_i64 = ab(ValType.F64, ValType.I64);
-    StackType v128_i64 = ab(ValType.V128, ValType.I64);
-
-    StackType i32_f32 = ab(ValType.I32, ValType.F32);
-    StackType i64_f32 = ab(ValType.I64, ValType.F32);
-    StackType f64_f32 = ab(ValType.F64, ValType.F32);
-    StackType v128_f32 = ab(ValType.V128, ValType.F32);
-
-    StackType i32_f64 = ab(ValType.I32, ValType.F64);
-    StackType i64_f64 = ab(ValType.I64, ValType.F64);
-    StackType f32_f64 = ab(ValType.F32, ValType.F64);
-    StackType v128_f64 = ab(ValType.V128, ValType.F64);
-
-    StackType i32_v128 = ab(ValType.I32, ValType.V128);
-    StackType i64_v128 = ab(ValType.I64, ValType.V128);
-    StackType f32_v128 = ab(ValType.F32, ValType.V128);
-    StackType f64_v128 = ab(ValType.F64, ValType.V128);
-
-
-    private static StackType unop(ValType t) { return new Basic(List.of(t), List.of(t)); }
-    private static StackType consume(ValType... types) { return new Basic(List.of(types), List.of()); }
-    private static StackType produce(ValType... types) { return new Basic(List.of(), List.of(types)); }
-    private static StackType binop(ValType t) { return new StackType.Basic(List.of(t, t), List.of(t)); }
-    private static StackType bicompare(ValType t) { return new StackType.Basic(List.of(t, t), List.of(ValType.I32)); }
-    private static StackType ab(ValType a, ValType b) { return new StackType.Basic(List.of(a), List.of(b)); }
-    private static StackType replacelane(ValType t) { return new StackType.Basic(List.of(ValType.V128, t), List.of(ValType.V128)); }
+                if ((b & 0x40L) != 0L)
+                    result = result | ((~0L) << shift);
+                if (result < 0L)
+                    throw new ModuleParseException("Blocktype defaultIndex cannot be negative! Got $result");
+                if (result > (long) Integer.MAX_VALUE)
+                    throw new ModuleParseException("Blocktype defaultIndex too large (must be at most ${Int.MAX_VALUE}, got $result)");
+                yield moduleTypes.get((int) result);
+            }
+        };
+    }
 
 }

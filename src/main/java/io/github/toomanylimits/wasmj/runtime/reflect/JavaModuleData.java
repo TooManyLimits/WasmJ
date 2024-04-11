@@ -1,12 +1,13 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
-import io.github.toomanylimits.wasmj.compiler.BytecodeHelper;
-import io.github.toomanylimits.wasmj.compiler.Compile;
+import io.github.toomanylimits.wasmj.compiling.helpers.Names;
+import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJRename;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
@@ -121,14 +122,14 @@ public class JavaModuleData<T> {
             return "(" + ListUtils.fold(ListUtils.map(getGlueParams(), MethodData::gluedTypeDescriptor), "", String::concat) + ")" + Type.getDescriptor(method.getReturnType());
         }
 
-        public void writeGlue(ClassVisitor writer, String functionName, String callerModuleName, String javaModuleName) {
+        public void writeGlue(ClassVisitor writer, String functionName, String callerModuleName, String javaModuleName, boolean doRefcounting) {
             int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
             MethodVisitor visitor = writer.visitMethod(access, functionName, glueDescriptor(), null, null);
 
             visitor.visitCode();
             if (globalInstanceMode && !isStatic()) {
-                String owner = Compile.getClassName(callerModuleName); // Field is located in the caller, the wasm module
-                String name = Compile.getGlobalInstanceName(javaModuleName); // Name is based on the name of the java module
+                String owner = Names.className(callerModuleName); // Field is located in the caller, the wasm module
+                String name = Names.globalInstanceFieldName(javaModuleName); // Name is based on the name of the java module
                 String desc = Type.getDescriptor(method.getDeclaringClass()); // Receiver is the type of the global instance
                 visitor.visitFieldInsn(Opcodes.GETSTATIC, owner, name, desc); // Grab the static global instance
             }
@@ -138,18 +139,20 @@ public class JavaModuleData<T> {
             for (Class<?> glueParam : getGlueParams()) {
                 // Load the param
                 ValType valtype = BytecodeHelper.wasmType(glueParam);
-                BytecodeHelper.loadLocal(visitor, localIndex, valtype); // Load the local
+                visitor.visitVarInsn(valtype.loadOpcode, localIndex); // Load the local
                 localIndex += valtype.stackSlots;
                 if (isGluedType(glueParam)) {
                     // If it's glued, use instanceof to ensure type
-                    Label end = new Label();
+                    Label isInstance = new Label();
+                    Label isNull = new Label();
                     // Stack = [ ...,  object ]
                     visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
                     visitor.visitTypeInsn(Opcodes.INSTANCEOF, Type.getInternalName(glueParam)); // [ ..., object, bool ]
-                    visitor.visitJumpInsn(Opcodes.IFNE, end); // [ ..., object ]
+                    visitor.visitJumpInsn(Opcodes.IFNE, isInstance); // [ ..., object ]
 
+                    // Also okay if it's null (TODO: annotation for non-nullable?)
                     visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
-                    visitor.visitJumpInsn(Opcodes.IFNULL, end); // [ ..., object ]
+                    visitor.visitJumpInsn(Opcodes.IFNULL, isNull); // [ ..., object ]
 
                     // Throw an error with a hopefully nice error message
                     visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
@@ -159,7 +162,18 @@ public class JavaModuleData<T> {
                     visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/String", "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
                     BytecodeHelper.throwRuntimeError(visitor);
 
-                    visitor.visitLabel(end);
+                    visitor.visitLabel(isInstance);
+
+                    // Do refcounting on the type if necessary, since we're calling out of WASM and into java!
+                    // Here, the type *is* an instance, and it *is not* null.
+                    if (doRefcounting) {
+                        visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
+                        visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(RefCountable.class)); // [ ..., object, object ]
+                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(callerModuleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [ ..., object, object, limiter ]
+                        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(RefCountable.class), "dec", "(" + Type.getDescriptor(InstanceLimiter.class) + ")V", false); // [ ..., object ]
+                    }
+
+                    visitor.visitLabel(isNull);
 
                     // Checkcast at the end. This checkcast will always succeed, but it's necessary to satisfy the verifier.
                     visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(glueParam));
@@ -170,8 +184,17 @@ public class JavaModuleData<T> {
             // Call the original function
             int opcode = isStatic() ? Opcodes.INVOKESTATIC : Opcodes.INVOKEVIRTUAL;
             visitor.visitMethodInsn(opcode, Type.getInternalName(method.getDeclaringClass()), javaName(), descriptor(), false);
-            // Return
-            BytecodeHelper.returnValue(visitor, BytecodeHelper.wasmType(method.getReturnType()));
+
+            // Return the output of the java function
+            if (method.getReturnType() == void.class) {
+                visitor.visitInsn(Opcodes.RETURN);
+            } else if (method.getReturnType() == Object[].class) {
+                visitor.visitInsn(Opcodes.ARETURN);
+            } else {
+                ValType wasmType = BytecodeHelper.wasmType(method.getReturnType());
+                visitor.visitInsn(wasmType.returnOpcode);
+            }
+
             // And end the visitor
             visitor.visitMaxs(0, 0);
             visitor.visitEnd();
@@ -184,8 +207,10 @@ public class JavaModuleData<T> {
             return res;
         }
 
+        // Returns true if the clazz is RefCountable or a subclass
         private static boolean isGluedType(Class<?> clazz) {
-            return !clazz.isPrimitive() && !clazz.isAssignableFrom(RefCountable.class);
+            return RefCountable.class.isAssignableFrom(clazz);
+//            return !clazz.isPrimitive() && !clazz.isAssignableFrom(RefCountable.class);
         }
 
         private static String gluedTypeDescriptor(Class<?> clazz) {

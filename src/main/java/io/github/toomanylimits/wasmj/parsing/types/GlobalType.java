@@ -1,7 +1,7 @@
 package io.github.toomanylimits.wasmj.parsing.types;
 
-import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
 import io.github.toomanylimits.wasmj.parsing.ParseHelper;
+import io.github.toomanylimits.wasmj.parsing.module.ModuleParseException;
 
 import java.io.IOException;
 import java.io.InputStream;

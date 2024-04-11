@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.util;
 
+import io.github.toomanylimits.wasmj.util.funcs.ThrowingBiConsumer;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingBiFunction;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingConsumer;
 import io.github.toomanylimits.wasmj.util.funcs.ThrowingFunction;
@@ -15,11 +16,28 @@ public class ListUtils {
         return result;
     }
 
+    // Function can return null; null results are not added to the list
+    public static <T, R, E extends Throwable> ArrayList<R> flatMapNonNull(List<T> list, ThrowingFunction<T, R, E> func) throws E {
+        ArrayList<R> result = new ArrayList<>(list.size());
+        for (T elem : list) {
+            R output = func.accept(elem);
+            if (output != null)
+                result.add(output);
+        }
+        return result;
+    }
+
     public static <T, R, E extends Throwable> List<R> mapIndexed(List<T> list, ThrowingBiFunction<Integer, T, R, E> func) throws E {
         ArrayList<R> result = new ArrayList<>(list.size());
         for (int i = 0; i < list.size(); i++)
             result.add(func.accept(i, list.get(i)));
         return result;
+    }
+
+    public static <T, E extends Throwable> void forEachIndexed(List<T> list, ThrowingBiConsumer<Integer, T, E> func) throws E {
+        int i = 0;
+        for (T elem : list)
+            func.accept(i++, elem);
     }
 
     public static <T, E extends Throwable> List<T> filter(List<T> list, ThrowingFunction<T, Boolean, E> pred) throws E {
@@ -73,6 +91,13 @@ public class ListUtils {
         Map<K, T> result = new HashMap<>(list.size());
         for (T elem : list)
             result.put(keyGetter.accept(elem), elem);
+        return result;
+    }
+
+    public static <T, K, V, E extends Throwable> Map<K, V> associateByTo(List<T> list, ThrowingFunction<T, K, E> keyGetter, ThrowingFunction<T, V, E> valueGetter) throws E {
+        Map<K, V> result = new HashMap<>(list.size());
+        for (T elem : list)
+            result.put(keyGetter.accept(elem), valueGetter.accept(elem));
         return result;
     }
 

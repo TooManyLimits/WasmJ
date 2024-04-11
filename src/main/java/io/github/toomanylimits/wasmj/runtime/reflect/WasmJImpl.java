@@ -1,12 +1,11 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
-import io.github.toomanylimits.wasmj.runtime.errors.TooManyInstructionsException;
-import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
-import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.errors.WasmCodeException;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 
 import java.nio.charset.StandardCharsets;

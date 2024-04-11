@@ -1,13 +1,19 @@
-package io.github.toomanylimits.wasmj.compiler;
+package io.github.toomanylimits.wasmj.compiling.helpers;
 
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.errors.WasmCodeException;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
+import io.github.toomanylimits.wasmj.runtime.types.FuncRefInstance;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import java.io.PrintStream;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public class BytecodeHelper {
     // Get the number of stack slots the given class takes up
@@ -19,7 +25,6 @@ public class BytecodeHelper {
     }
     // Get the type name of the given class for ASM
     public static ValType wasmType(Class<?> clazz) {
-        if (clazz == void.class) return null;
         if (clazz == int.class) return ValType.I32;
         if (clazz == long.class) return ValType.I64;
         if (clazz == float.class) return ValType.F32;
@@ -52,7 +57,33 @@ public class BytecodeHelper {
         visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, typeName, "<init>", "()V", false); // [initialized obj]
     }
 
+    private static final ConcurrentMap<String, ConcurrentMap<Class<?>, Method>> cache = new ConcurrentHashMap<>();
+    public static void callNamedStaticMethod(String methodName, MethodVisitor visitor, Class<?> clazz) {
+        String owningClass = Type.getInternalName(clazz);
+        Method foundMethod = cache.computeIfAbsent(methodName, x -> new ConcurrentHashMap<>()).get(clazz);
+        if (foundMethod == null) {
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (!Modifier.isStatic(method.getModifiers())) continue;
+                if (!method.getName().equals(methodName)) continue;
+                if (foundMethod != null) throw new IllegalArgumentException("Multiple static methods named \"" + methodName + "\" in class \"" + clazz.getName() + "\"");
+                foundMethod = method;
+            }
+            if (foundMethod == null)
+                throw new IllegalArgumentException();
+            cache.get(methodName).put(clazz, foundMethod);
+        }
+        String descriptor = Type.getMethodDescriptor(foundMethod);
+        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, owningClass, methodName, descriptor, false);
+    }
+
     // Push a constant value on the stack
+    public static void constValue(MethodVisitor visitor, Object obj) {
+        if (obj instanceof Integer i) constInt(visitor, i);
+        else if (obj instanceof Long l) constLong(visitor, l);
+        else if (obj instanceof Float f) constFloat(visitor, f);
+        else if (obj instanceof Double d) constDouble(visitor, d);
+        else throw new IllegalArgumentException();
+    }
     public static void constInt(MethodVisitor visitor, int value) {
         if (value >= -1 && value <= 5) visitor.visitInsn(Opcodes.ICONST_0 + value);
         else if (value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE) visitor.visitIntInsn(Opcodes.BIPUSH, value);
@@ -72,12 +103,37 @@ public class BytecodeHelper {
         else visitor.visitLdcInsn(value);
     }
     public static void boxValue(MethodVisitor visitor, ValType type) {
-        if (type == ValType.I32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-        else if (type == ValType.I64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
-        else if (type == ValType.F32) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
-        else if (type == ValType.F64) visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
-        else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) { /* Do nothing */ }
-        else throw new UnsupportedOperationException("Cannot box value of given type - only int, long, float, double, reftype");
+        switch (type) {
+            case I32 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+            case I64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
+            case F32 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
+            case F64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
+            case FUNCREF, EXTERNREF -> { /* Do nothing */ }
+            default -> throw new UnsupportedOperationException("Cannot box value of given type - only int, long, float, double, reftype");
+        }
+    }
+    public static void unboxValue(MethodVisitor visitor, ValType type) {
+        switch (type) {
+            case I32 -> {
+                visitor.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Integer");
+                visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+            }
+            case I64 -> {
+                visitor.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Long");
+                visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Long", "longValue", "()J", false);
+            }
+            case F32 -> {
+                visitor.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Float");
+                visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Float", "floatValue", "()F", false);
+            }
+            case F64 -> {
+                visitor.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Double");
+                visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Double", "doubleValue", "()D", false);
+            }
+            case FUNCREF -> visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class));
+            case EXTERNREF -> visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(RefCountable.class));
+            default -> throw new UnsupportedOperationException("Cannot unbox value of given type - only int, long, float, double, reftype");
+        }
     }
     // Give a jumping opcode to test the top of the stack.
     // If the opcode succeeds (a jump occurs), 1 is pushed.
@@ -122,7 +178,7 @@ public class BytecodeHelper {
             default -> throw new UnsupportedOperationException("Cannot dup value with " + type.stackSlots + " stack slots, jvm only supports 1 and 2!");
         }
     }
-    // Emit bytecode that stores a local of the given type at the given index
+    // Emit bytecode that stores a local of the given type at the given defaultIndex
     public static void storeLocal(MethodVisitor visitor, int index, ValType type) {
         if (type == ValType.I32) visitor.visitVarInsn(Opcodes.ISTORE, index);
         else if (type == ValType.I64) visitor.visitVarInsn(Opcodes.LSTORE, index);
@@ -131,7 +187,7 @@ public class BytecodeHelper {
         else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) visitor.visitVarInsn(Opcodes.ASTORE, index);
         else throw new UnsupportedOperationException("Cannot store local of given type - only int, long, float, double, reftype");
     }
-    // Emit bytecode that loads a local of the given type at the given index
+    // Emit bytecode that loads a local of the given type at the given defaultIndex
     public static void loadLocal(MethodVisitor visitor, int index, ValType type) {
         if (type == ValType.I32) visitor.visitVarInsn(Opcodes.ILOAD, index);
         else if (type == ValType.I64) visitor.visitVarInsn(Opcodes.LLOAD, index);
@@ -140,7 +196,7 @@ public class BytecodeHelper {
         else if (type == ValType.FUNCREF || type == ValType.EXTERNREF) visitor.visitVarInsn(Opcodes.ALOAD, index);
         else throw new UnsupportedOperationException("Cannot load local of given type - only int, long, float, double, reftype");
     }
-    // Emit bytecode that stores a local of the given type at the given index
+    // Emit bytecode that stores a local of the given type at the given defaultIndex
     public static void returnValue(MethodVisitor visitor, ValType type) {
         if (type == null) visitor.visitInsn(Opcodes.RETURN); // null = void
         else if (type == ValType.I32) visitor.visitInsn(Opcodes.IRETURN);
