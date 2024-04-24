@@ -52,9 +52,9 @@ public class WasmInstance {
             c.getDeclaredMethod(Names.initMethodName(), InstanceLimiter.class, Map.class, SimpleModule.class).invoke(null, limiter, instanceJavaModules, simple); // Throws WasmException
         } catch (InvocationTargetException e) {
             // Re-wrap it as a WASM exception if needed
-            if (e.getTargetException() instanceof WasmException ex)
+            if (e.getCause() instanceof WasmException ex)
                 throw ex;
-            throw new JvmCodeError(e.getTargetException());
+            throw new JvmCodeError(e.getCause());
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new IllegalStateException("Failed to locate/call init method? Should always succeed!", e);
         }

@@ -34,8 +34,8 @@ public sealed interface SimpleInstruction {
     record Return(List<ValType> typesReturned, List<ValType> restOfStack) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitReturn(this); } }
 
     // Calling a function
-    record Call(int funcIndex, List<ValType> paramTypes, List<ValType> returnTypes) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitCall(this); } }
-    record CallIndirect(int tableIndex, List<ValType> paramTypes, List<ValType> returnTypes) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitCallIndirect(this); } }
+    record Call(int funcIndex) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitCall(this); } }
+    record CallIndirect(int tableIndex, StackType funcType) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitCallIndirect(this); } }
     // Global variables
     record GlobalSet(int globalIndex) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitGlobalSet(this); } }
     record GlobalGet(int globalIndex) implements SimpleInstruction { @Override public <R, T extends Throwable> R accept(SimpleInstructionVisitor<R, T> visitor) throws T { return visitor.visitGlobalGet(this); } }

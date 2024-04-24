@@ -75,20 +75,27 @@ public class CallingHelpers {
             default -> {
                 // The return values were outputted in an Object[]. Take each one out onto the stack.
                 // Stack = [arr]
-                visitor.visitInsn(Opcodes.ICONST_0); // [arr, defaultIndex]
+                visitor.visitInsn(Opcodes.ICONST_0); // [arr, index]
                 for (ValType t : outTypes) {
-                    visitor.visitInsn(Opcodes.DUP2); // [arr, defaultIndex, arr, defaultIndex]
-                    visitor.visitInsn(Opcodes.AALOAD); // [arr, defaultIndex, boxed value]
-                    BytecodeHelper.unboxValue(visitor, t); // [arr, defaultIndex, unboxed value]
+                    visitor.visitInsn(Opcodes.DUP2); // [arr, index, arr, index]
+                    visitor.visitInsn(Opcodes.AALOAD); // [arr, index, boxed value]
+                    BytecodeHelper.unboxValue(visitor, t); // [arr, index, unboxed value]
                     // If we count memory and this is a reference type, increment its ref count
                     if (incrementRefCounts && t.isRef()) {
                         visitor.visitInsn(Opcodes.DUP); // Duplicate it
                         compiler.visitIntrinsic(IncRefCount.INSTANCE); // Increment ref count
                     }
-                    visitor.visitInsn(Opcodes.DUP_X2); // [unboxed value, arr, defaultIndex, unboxed value]
-                    BytecodeHelper.popValue(visitor, t); // [unboxed value, arr, defaultIndex]
+                    switch (t.stackSlots) {
+                        case 1 -> visitor.visitInsn(Opcodes.DUP_X2);
+                        case 2 -> visitor.visitInsn(Opcodes.DUP2_X2);
+                        default -> throw new IllegalStateException();
+                    } // [unboxed value, arr, index, unboxed value]
+                    BytecodeHelper.popValue(visitor, t); // [unboxed value, arr, index]
+                    visitor.visitInsn(Opcodes.ICONST_1); // [unboxed value, arr, index, 1]
+                    visitor.visitInsn(Opcodes.IADD); // [unboxed value, arr, index + 1]
                 }
-                // [all unboxed values]
+                // [all unboxed values, arr, index]
+                visitor.visitInsn(Opcodes.POP2); // [all unboxed values]
             }
         }
     }

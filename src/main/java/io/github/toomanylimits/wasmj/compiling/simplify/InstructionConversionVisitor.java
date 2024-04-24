@@ -204,16 +204,16 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
         validator.popVals(functionType.inTypes()); // Pop args
         validator.pushVals(functionType.outTypes()); // Push results
         // Result in the simple instruction
-        return new SimpleInstruction.Call(inst.index(), functionType.inTypes(), functionType.outTypes());
+        return new SimpleInstruction.Call(inst.index());
     }
 
     @Override
     public SimpleInstruction visitCallIndirect(Instruction.CallIndirect inst) throws Validator.ValidationException {
-        StackType type = wasmModule.types.get(inst.typeIndex());
+        StackType funcType = wasmModule.types.get(inst.typeIndex());
         validator.popVal(ValType.I32);
-        validator.popVals(type.inTypes());
-        validator.pushVals(type.outTypes());
-        return new SimpleInstruction.CallIndirect(inst.tableIndex(), type.inTypes(), type.outTypes());
+        validator.popVals(funcType.inTypes());
+        validator.pushVals(funcType.outTypes());
+        return new SimpleInstruction.CallIndirect(inst.tableIndex(), funcType);
     }
 
     @Override

@@ -12,6 +12,7 @@ public class Names {
 
     // Data / elements
     public static String dataFieldName(int declaredIndex) { return "data_" + declaredIndex; }
+    public static String elemFieldName(int declaredIndex) { return "elem_" + declaredIndex; }
 
 
     // Functions

@@ -7,14 +7,18 @@ import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.Class
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox.DecRefCount;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox.IncInstructionsBy;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox.IncRefCount;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.table.TableGet;
 import io.github.toomanylimits.wasmj.compiling.visitor.SimpleInstructionVisitor;
 import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.runtime.types.FuncRefInstance;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
+import java.lang.invoke.MethodHandle;
 import java.util.*;
 
 public class CompilingSimpleInstructionVisitor extends SimpleInstructionVisitor<Void, RuntimeException> {
@@ -284,7 +288,44 @@ public class CompilingSimpleInstructionVisitor extends SimpleInstructionVisitor<
 
     @Override
     public Void visitCallIndirect(SimpleInstruction.CallIndirect inst) throws RuntimeException {
-        BytecodeHelper.throwRuntimeError(visitor, "call_indirect is TODO");
+        // Stack = [args, index]
+        visitIntrinsic(new TableGet(inst.tableIndex())); // [args, funcref]
+        visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class)); // [args, funcref]
+        visitor.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(FuncRefInstance.class), "handle", Type.getDescriptor(MethodHandle.class)); // [args, handle]
+        // Now we need to put the handle below all the args.
+        int stackSlots = ListUtils.sumBy(inst.funcType().inTypes(), t -> t.stackSlots);
+        switch (stackSlots) {
+            case 0 -> {} // Nothing
+            case 1 -> visitor.visitInsn(Opcodes.SWAP); // Just swap
+            case 2 -> { // Dup x2 and pop
+                visitor.visitInsn(Opcodes.DUP_X2);
+                visitor.visitInsn(Opcodes.POP);
+            }
+            default -> {
+                // General case
+                if (module.instance.limiter.countsInstructions)
+                    visitIntrinsic(new IncInstructionsBy(stackSlots - 2));
+                // Store the args in locals, push the handle, then load the args from locals again
+                int firstLocal = getNextLocalSlot();
+                visitor.visitVarInsn(Opcodes.ASTORE, firstLocal); // [args]
+                int curLocal = firstLocal + 1;
+                for (ValType arg : ListUtils.reversed(inst.funcType().inTypes())) {
+                    BytecodeHelper.storeLocal(visitor, curLocal, arg);
+                    curLocal += arg.stackSlots;
+                }
+                // Stack = []
+                visitor.visitVarInsn(Opcodes.ALOAD, firstLocal); // [handle]
+                for (ValType arg : inst.funcType().inTypes()) {
+                    curLocal -= arg.stackSlots;
+                    BytecodeHelper.loadLocal(visitor, curLocal, arg);
+                }
+            }
+        }
+        // Stack = [handle, args]
+        // Now, call the handle function
+        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(MethodHandle.class), "invokeExact", inst.funcType().descriptor(), false);
+        // Stack = [result(s)]
+        CallingHelpers.unwrapReturnValues(visitor, this, inst.funcType(), false); // No ref counting, as this always refers to a WASM function
         return null;
     }
 

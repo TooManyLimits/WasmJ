@@ -2,6 +2,7 @@ package io.github.toomanylimits.wasmj.compiling.compiler;
 
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleData;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleElem;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleFunction;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleGlobal;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
@@ -12,7 +13,9 @@ import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
+import org.objectweb.asm.util.TraceClassVisitor;
 
+import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +40,7 @@ public class Compiler {
         // Create and begin the class writer
         ClassVisitor classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
         classWriter = new CheckClassAdapter(classWriter);
+//        classWriter = new TraceClassVisitor(classWriter, new PrintWriter(System.err));
         String className = Names.className(module.moduleName);
         classWriter.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 
@@ -51,8 +55,9 @@ public class Compiler {
         for (SimpleTable t : module.tables) t.emitTable(module, classWriter, initFunction, classGenCallbacks);
         module.memory.emitMemory(module, classWriter, initFunction, classGenCallbacks);
 
-        // Emit datas (todo: and elements)
+        // Emit datas and elements
         for (SimpleData d : module.datas) d.emitData(module, classWriter, initFunction, classGenCallbacks);
+        for (SimpleElem e : module.elems) e.emitElem(module, classWriter, initFunction, classGenCallbacks);
 
         // End init function
         initFunction.visitInsn(Opcodes.RETURN);
@@ -71,6 +76,7 @@ public class Compiler {
 
         // End writer and return
         classWriter.visitEnd();
+//        return ((ClassWriter) classWriter.getDelegate().getDelegate()).toByteArray();
         return ((ClassWriter) classWriter.getDelegate()).toByteArray();
     }
 

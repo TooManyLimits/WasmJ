@@ -138,9 +138,16 @@ public class JavaModuleData<T> {
             int localIndex = 0;
             for (Class<?> glueParam : getGlueParams()) {
                 // Load the param
-                ValType valtype = BytecodeHelper.wasmType(glueParam);
-                visitor.visitVarInsn(valtype.loadOpcode, localIndex); // Load the local
-                localIndex += valtype.stackSlots;
+                if (glueParam == boolean.class) {
+                    // If boolean, ensure it's 0 or 1 before passing to the java function
+                    visitor.visitVarInsn(Opcodes.ILOAD, localIndex);
+                    BytecodeHelper.test(visitor, Opcodes.IFNE); // Convert to 1 or 0
+                    localIndex += 1;
+                } else {
+                    ValType valtype = BytecodeHelper.wasmType(glueParam);
+                    visitor.visitVarInsn(valtype.loadOpcode, localIndex); // Load the local
+                    localIndex += valtype.stackSlots;
+                }
                 if (isGluedType(glueParam)) {
                     // If it's glued, use instanceof to ensure type
                     Label isInstance = new Label();
@@ -190,6 +197,8 @@ public class JavaModuleData<T> {
                 visitor.visitInsn(Opcodes.RETURN);
             } else if (method.getReturnType() == Object[].class) {
                 visitor.visitInsn(Opcodes.ARETURN);
+            } else if (method.getReturnType() == boolean.class) {
+                visitor.visitInsn(Opcodes.IRETURN);
             } else {
                 ValType wasmType = BytecodeHelper.wasmType(method.getReturnType());
                 visitor.visitInsn(wasmType.returnOpcode);

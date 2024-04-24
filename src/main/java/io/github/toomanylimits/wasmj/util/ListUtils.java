@@ -34,6 +34,13 @@ public class ListUtils {
         return result;
     }
 
+    public static <T, E extends Throwable> int sumBy(List<T> list, ThrowingFunction<T, Integer, E> intSelector) throws E, ArithmeticException {
+        int sum = 0;
+        for (T elem : list)
+            sum = Math.addExact(sum, intSelector.accept(elem));
+        return sum;
+    }
+
     public static <T, E extends Throwable> void forEachIndexed(List<T> list, ThrowingBiConsumer<Integer, T, E> func) throws E {
         int i = 0;
         for (T elem : list)

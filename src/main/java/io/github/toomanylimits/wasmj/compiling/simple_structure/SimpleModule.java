@@ -1,6 +1,7 @@
 package io.github.toomanylimits.wasmj.compiling.simple_structure;
 
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleData;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleElem;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleFunction;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleGlobal;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleMemory;
@@ -20,6 +21,7 @@ import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.Opcodes;
 
+import javax.swing.plaf.ListUI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,7 @@ public class SimpleModule {
     public final SimpleMemory memory; // All memories, including imported ones. WASM only supports 1 memory per module for now, so it's not an array.
 
     public final SimpleData[] datas; // All datas
+    public final SimpleElem[] elems; // All elems
 
 
     /**
@@ -172,6 +175,24 @@ public class SimpleModule {
                 datas[i] = new SimpleData(i, data.init(), instructionsToExecute);
             } else {
                 datas[i] = new SimpleData(i, data.init(), null);
+            }
+        }
+
+        // Elems
+        this.elems = new SimpleElem[wasmModule.elements.size()];
+        for (int i = 0; i < wasmModule.elements.size(); i++) {
+            Element elem = wasmModule.elements.get(i);
+
+            InstructionConversionVisitor converter = new InstructionConversionVisitor(wasmModule, List.of(), null);
+            List<List<SimpleInstruction>> initializers = ListUtils.map(elem.exprs(), expr -> ListUtils.flatMapNonNull(expr.getInstructions(), x -> x.accept(converter)));
+
+            if (elem.mode() instanceof Element.Mode.Active active) {
+                List<SimpleInstruction> offset = ListUtils.flatMapNonNull(active.offset().getInstructions(), x -> x.accept(converter));
+                elems[i] = new SimpleElem(i, initializers, active.tableIndex(), offset);
+            } else if (elem.mode() == Element.Mode.Passive.INSTANCE) {
+                elems[i] = new SimpleElem(i, initializers, null, null);
+            } else {
+                throw new UnsupportedOperationException("Declarative element segments are not supported, because I genuinely don't get what the point of them is and I don't know how or why to implement them");
             }
         }
 

@@ -7,6 +7,6 @@ package io.github.toomanylimits.wasmj.runtime.errors;
  */
 public class JvmCodeError extends WasmException {
     public JvmCodeError(Throwable cause) {
-        super("Jvm error: " + cause, cause);
+        super(null, cause);
     }
 }
