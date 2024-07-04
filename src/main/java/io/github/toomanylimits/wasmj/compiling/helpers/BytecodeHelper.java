@@ -105,9 +105,9 @@ public class BytecodeHelper {
     public static void boxValue(MethodVisitor visitor, ValType type) {
         switch (type) {
             case I32 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-            case I64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(I)Ljava/lang/Long;", false);
-            case F32 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(I)Ljava/lang/Float;", false);
-            case F64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(I)Ljava/lang/Double;", false);
+            case I64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            case F32 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+            case F64 -> visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
             case FUNCREF, EXTERNREF -> { /* Do nothing */ }
             default -> throw new UnsupportedOperationException("Cannot box value of given type - only int, long, float, double, reftype");
         }
