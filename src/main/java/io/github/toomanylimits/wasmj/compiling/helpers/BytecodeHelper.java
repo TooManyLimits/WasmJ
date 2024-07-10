@@ -208,7 +208,7 @@ public class BytecodeHelper {
     }
 
     // Emit bytecode that does debug printing of various kinds
-    private static final boolean DEBUG_PRINTS_ENABLED = false;
+    public static final boolean DEBUG_PRINTS_ENABLED = true;
     public static void debugPrintln(MethodVisitor visitor, String message) {
         if (DEBUG_PRINTS_ENABLED) {
             visitor.visitFieldInsn(Opcodes.GETSTATIC, Type.getInternalName(System.class), "out", Type.getDescriptor(PrintStream.class));

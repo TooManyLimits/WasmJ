@@ -373,98 +373,98 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     public SimpleInstruction visitI32Load(Instruction.I32Load inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I32);
-        return new MemoryLoad("I", false, false, inst.offset());
+        return new MemoryLoad("I", ValType.I32, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load(Instruction.I64Load inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("J", false, false, inst.offset());
+        return new MemoryLoad("J", ValType.I64, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitF32Load(Instruction.F32Load inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.F32);
-        return new MemoryLoad("F", false, false, inst.offset());
+        return new MemoryLoad("F", ValType.F32, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitF64Load(Instruction.F64Load inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.F64);
-        return new MemoryLoad("D", false, false, inst.offset());
+        return new MemoryLoad("D", ValType.F64, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI32Load8S(Instruction.I32Load8S inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I32);
-        return new MemoryLoad("B", false, false, inst.offset());
+        return new MemoryLoad("B", ValType.I32, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI32Load8U(Instruction.I32Load8U inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I32);
-        return new MemoryLoad("B", false, true, inst.offset());
+        return new MemoryLoad("B", ValType.I32, true, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI32Load16S(Instruction.I32Load16S inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I32);
-        return new MemoryLoad("S", false, false, inst.offset());
+        return new MemoryLoad("S", ValType.I32, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI32Load16U(Instruction.I32Load16U inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I32);
-        return new MemoryLoad("S", false, true, inst.offset());
+        return new MemoryLoad("S", ValType.I32, true, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load8S(Instruction.I64Load8S inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("B", true, false, inst.offset());
+        return new MemoryLoad("B", ValType.I64, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load8U(Instruction.I64Load8U inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("B", true, true, inst.offset());
+        return new MemoryLoad("B", ValType.I64, true, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load16S(Instruction.I64Load16S inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("S", true, false, inst.offset());
+        return new MemoryLoad("S", ValType.I64, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load16U(Instruction.I64Load16U inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("S", true, true, inst.offset());
+        return new MemoryLoad("S", ValType.I64, true, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load32S(Instruction.I64Load32S inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("I", true, false, inst.offset());
+        return new MemoryLoad("I", ValType.I64, false, inst.offset());
     }
 
     @Override
     public SimpleInstruction visitI64Load32U(Instruction.I64Load32U inst) throws Validator.ValidationException {
         validator.popVal(ValType.I32);
         validator.pushVal(ValType.I64);
-        return new MemoryLoad("I", true, true, inst.offset());
+        return new MemoryLoad("I", ValType.I64, true, inst.offset());
     }
 
     @Override
@@ -1017,6 +1017,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     public SimpleInstruction visitI64Clz(Instruction.I64Clz inst) throws Validator.ValidationException {
         return unaryBytecode(ValType.I64, visitor -> {
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "numberOfLeadingZeros", "(J)I", false);
+            visitor.visitInsn(Opcodes.I2L);
         });
     }
 
@@ -1024,6 +1025,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     public SimpleInstruction visitI64Ctz(Instruction.I64Ctz inst) throws Validator.ValidationException {
         return unaryBytecode(ValType.I64, visitor -> {
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "numberOfTrailingZeros", "(J)I", false);
+            visitor.visitInsn(Opcodes.I2L);
         });
     }
 
@@ -1031,6 +1033,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     public SimpleInstruction visitI64PopCnt(Instruction.I64PopCnt inst) throws Validator.ValidationException {
         return unaryBytecode(ValType.I64, visitor -> {
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Long", "bitCount", "(J)I", false);
+            visitor.visitInsn(Opcodes.I2L);
         });
     }
 
@@ -1090,17 +1093,26 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
 
     @Override
     public SimpleInstruction visitI64Shl(Instruction.I64Shl inst) throws Validator.ValidationException {
-        return binaryOp(ValType.I64, Opcodes.LSHL);
+        return binaryBytecode(ValType.I64, visitor -> {
+            visitor.visitInsn(Opcodes.L2I);
+            visitor.visitInsn(Opcodes.LSHL);
+        });
     }
 
     @Override
     public SimpleInstruction visitI64ShrS(Instruction.I64ShrS inst) throws Validator.ValidationException {
-        return binaryOp(ValType.I64, Opcodes.LSHR);
+        return binaryBytecode(ValType.I64, visitor -> {
+            visitor.visitInsn(Opcodes.L2I);
+            visitor.visitInsn(Opcodes.LSHR);
+        });
     }
 
     @Override
     public SimpleInstruction visitI64ShrU(Instruction.I64ShrU inst) throws Validator.ValidationException {
-        return binaryOp(ValType.I64, Opcodes.LUSHR);
+        return binaryBytecode(ValType.I64, visitor -> {
+            visitor.visitInsn(Opcodes.L2I);
+            visitor.visitInsn(Opcodes.LUSHR);
+        });
     }
 
     @Override

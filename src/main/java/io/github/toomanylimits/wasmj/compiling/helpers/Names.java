@@ -23,9 +23,13 @@ public class Names {
 
     // Globals
     public static String globalName(int declaredIndex) { return "global_" + declaredIndex; }
+    public static String exportGlobalGetterName(String memberName) { return "global_get_" + memberName; }
+    public static String exportGlobalSetterName(String memberName) { return "global_set_" + memberName; }
 
     // Tables
     public static String tableName(int declaredIndex) { return "table_" + declaredIndex; }
+    public static String exportTableGetterName(String memberName) { return "table_get_" + memberName; }
+    public static String exportTableSetterName(String memberName) { return "table_set_" + memberName; }
 
     // Memories
     public static String memoryName(int declaredIndex) { return "memory_" + declaredIndex; }

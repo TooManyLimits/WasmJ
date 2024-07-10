@@ -15,7 +15,11 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
+import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -40,7 +44,13 @@ public class Compiler {
         // Create and begin the class writer
         ClassVisitor classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
         classWriter = new CheckClassAdapter(classWriter);
-//        classWriter = new TraceClassVisitor(classWriter, new PrintWriter(System.err));
+//        try {
+//            classWriter = new TraceClassVisitor(classWriter, new PrintWriter(Files.newOutputStream(Path.of(
+//              "C:\\Users\\Maya\\Desktop\\visage\\jvm_bytecode.txt"
+//            ), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)));
+//        } catch (IOException e) {
+//            throw new RuntimeException(e);
+//        }
         String className = Names.className(module.moduleName);
         classWriter.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 

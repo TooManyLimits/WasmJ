@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.compiling.simple_structure.members;
 
+import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.helpers.CallingHelpers;
 import io.github.toomanylimits.wasmj.compiling.compiler.CompilingSimpleInstructionVisitor;
@@ -47,7 +48,9 @@ public interface SimpleFunction {
             String className = Names.className(callingModule.moduleName);
             String methodName = Names.funcName(declaredIndex);
             String descriptor = funcType.descriptor();
+            BytecodeHelper.debugPrintln(visitor, "Calling " + methodName);
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, descriptor, false);
+            BytecodeHelper.debugPrintln(visitor, "Returned from " + methodName);
             // Return values
             CallingHelpers.unwrapReturnValues(visitor, compilingVisitor, funcType, false); // Never refcount in Wasm -> Wasm
         }
@@ -111,7 +114,7 @@ public interface SimpleFunction {
         public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
             // Do nothing, the function was emitted in another module, unless we need to re-export it
             if (exportedAs != null) {
-                throw new IllegalStateException("Imported function exports are TODO");
+                throw new IllegalStateException("Re-exporting imported members is TODO");
             }
         }
 

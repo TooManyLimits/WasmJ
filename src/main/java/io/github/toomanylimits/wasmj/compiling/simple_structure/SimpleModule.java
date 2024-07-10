@@ -112,7 +112,12 @@ public class SimpleModule {
         this.globals = new SimpleGlobal[wasmModule.globalImports().size() + wasmModule.globals.size()];
         Map<Integer, String> exportedGlobals = ListUtils.associateByTo(ListUtils.filter(wasmModule.exports, e -> e.type() == Export.ExportType.GLOBAL), Export::index, Export::name);
         for (int i = 0; i < wasmModule.globalImports().size(); i++) {
-            throw new IllegalStateException("Global imports not yet implemented!");
+            Import.Global globalImport = wasmModule.globalImports().get(i);
+            String importModule = globalImport.moduleName;
+            String importName = globalImport.elementName;
+            GlobalType globalType = globalImport.globalType;
+            String exportedAs = exportedGlobals.get(i);
+            this.globals[i] = new SimpleGlobal.ImportedGlobal(importModule, importName, exportedAs, globalType);
         }
         for (int i = wasmModule.globalImports().size(); i < globals.length; i++) {
             // Get adjusted defaultIndex and type
@@ -131,7 +136,11 @@ public class SimpleModule {
         this.tables = new SimpleTable[wasmModule.tableImports().size() + wasmModule.tables.size()];
         Map<Integer, String> exportedTables = ListUtils.associateByTo(ListUtils.filter(wasmModule.exports, e -> e.type() == Export.ExportType.TABLE), Export::index, Export::name);
         for (int i = 0; i < wasmModule.tableImports().size(); i++) {
-            throw new IllegalStateException("Table imports not yet implemented!");
+            Import.Table tableImport = wasmModule.tableImports().get(i);
+            String importModule = tableImport.moduleName;
+            String importName = tableImport.elementName;
+            String exportedAs = exportedTables.get(i);
+            this.tables[i] = new SimpleTable.ImportedTable(importModule, importName, exportedAs);
         }
         for (int i = wasmModule.tableImports().size(); i < tables.length; i++) {
             // Get adjusted defaultIndex and type

@@ -84,7 +84,7 @@ public class ParseHelper {
             shift += 7;
         } while ((b & 0x80L) != 0L);
 
-        if ((b & 0x40L) != 0L)
+        if ((shift < 64) && (b & 0x40L) != 0L)
             result = result | ((~0L) << shift);
         return result;
     }
