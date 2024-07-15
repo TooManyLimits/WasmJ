@@ -9,6 +9,7 @@ import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandb
 import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -57,7 +58,7 @@ public record MemoryInit(int dataIndex) implements SimpleInstruction.Intrinsic {
             visitor.visitVarInsn(Opcodes.ALOAD, 4);
             visitor.visitVarInsn(Opcodes.ILOAD, 0);
             visitor.visitVarInsn(Opcodes.ILOAD, 2);
-            BytecodeHelper.callNamedStaticMethod("arraycopy", visitor, System.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(System.class), "arraycopy", "(Ljava/lang/Object;ILjava/lang/Object;II)V", false);
 
             // Return and end
             visitor.visitInsn(Opcodes.RETURN);

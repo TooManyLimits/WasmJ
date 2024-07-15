@@ -65,7 +65,7 @@ public record TableGrow(int tableIndex) implements SimpleInstruction.Intrinsic {
             // Bounds check:
             visitor.visitVarInsn(Opcodes.ILOAD, 1); // [requested]
             visitor.visitVarInsn(Opcodes.ALOAD, 2); // [old table]
-            BytecodeHelper.callNamedStaticMethod("boundsCheckHelper", visitor, TableGrow.class); // []
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(TableGrow.class), "boundsCheckHelper", "(I" + Type.getDescriptor(RefCountable[].class) + ")V", false); // []
 
             // Sandboxing
             Set<ClassGenCallback> usedCallbacks = new HashSet<>();
@@ -109,7 +109,8 @@ public record TableGrow(int tableIndex) implements SimpleInstruction.Intrinsic {
             visitor.visitVarInsn(Opcodes.ALOAD, 0); // [fillValue]
             visitor.visitVarInsn(Opcodes.ILOAD, 1); // [fillValue, requested]
             visitor.visitVarInsn(Opcodes.ALOAD, 2); // [fillValue, requested, oldTable]
-            BytecodeHelper.callNamedStaticMethod("growTableHelper", visitor, TableGrow.class); // [new table]
+            String growHelperDescriptor = "(" + Type.getDescriptor(RefCountable.class) + "I" + Type.getDescriptor(RefCountable[].class) + ")" + Type.getDescriptor(RefCountable[].class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(TableGrow.class), "growTableHelper", growHelperDescriptor, false); // [new table]
 
             // End the visitor
             visitor.visitInsn(Opcodes.ARETURN);

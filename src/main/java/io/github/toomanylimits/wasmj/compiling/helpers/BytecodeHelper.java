@@ -58,25 +58,6 @@ public class BytecodeHelper {
         visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, typeName, "<init>", "()V", false); // [initialized obj]
     }
 
-    private static final ConcurrentMap<String, ConcurrentMap<Class<?>, Method>> cache = new ConcurrentHashMap<>();
-    public static void callNamedStaticMethod(String methodName, MethodVisitor visitor, Class<?> clazz) {
-        String owningClass = Type.getInternalName(clazz);
-        Method foundMethod = cache.computeIfAbsent(methodName, x -> new ConcurrentHashMap<>()).get(clazz);
-        if (foundMethod == null) {
-            for (Method method : clazz.getDeclaredMethods()) {
-                if (!Modifier.isStatic(method.getModifiers())) continue;
-                if (!method.getName().equals(methodName)) continue;
-                if (foundMethod != null) throw new IllegalArgumentException("Multiple static methods named \"" + methodName + "\" in class \"" + clazz.getName() + "\"");
-                foundMethod = method;
-            }
-            if (foundMethod == null)
-                throw new IllegalArgumentException();
-            cache.get(methodName).put(clazz, foundMethod);
-        }
-        String descriptor = Type.getMethodDescriptor(foundMethod);
-        visitor.visitMethodInsn(Opcodes.INVOKESTATIC, owningClass, methodName, descriptor, false);
-    }
-
     // Push a constant value on the stack
     public static void constValue(MethodVisitor visitor, Object obj) {
         if (obj instanceof Integer i) constInt(visitor, i);

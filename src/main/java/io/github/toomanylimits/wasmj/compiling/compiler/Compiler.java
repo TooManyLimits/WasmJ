@@ -48,7 +48,7 @@ public class Compiler {
     public static Map<String, byte[]> compile(SimpleModule module) {
         // Create and begin the class writer
         ClassVisitor classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-        classWriter = new CheckClassAdapter(classWriter);
+//        classWriter = new CheckClassAdapter(classWriter);
 
         String className = Names.className(module.moduleName);
         classWriter.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);

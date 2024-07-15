@@ -12,6 +12,7 @@ import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.runtime.errors.WasmCodeException;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -65,7 +66,7 @@ public class MemoryGrow implements SimpleInstruction.Intrinsic {
             // Bounds check:
             visitor.visitVarInsn(Opcodes.ILOAD, 0); // [requested]
             visitor.visitVarInsn(Opcodes.ALOAD, 1); // [old memory]
-            BytecodeHelper.callNamedStaticMethod("boundsCheckHelper", visitor, MemoryGrow.class); // []
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(MemoryGrow.class), "boundsCheckHelper", "(I[B)V", false);
 
             // Sandboxing
             Set<ClassGenCallback> usedCallbacks = new HashSet<>();
@@ -93,7 +94,7 @@ public class MemoryGrow implements SimpleInstruction.Intrinsic {
             // Do the actual memory grow:
             visitor.visitVarInsn(Opcodes.ILOAD, 0); // [requested]
             visitor.visitVarInsn(Opcodes.ALOAD, 1); // [requested, oldMem]
-            BytecodeHelper.callNamedStaticMethod("growMemoryHelper", visitor, MemoryGrow.class); // [newMem]
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(MemoryGrow.class), "growMemoryHelper", "(I[B)[B", false); // [newMem]
 
             // End the visitor
             visitor.visitInsn(Opcodes.ARETURN);

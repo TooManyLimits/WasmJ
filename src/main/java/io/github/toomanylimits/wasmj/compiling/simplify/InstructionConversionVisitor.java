@@ -19,6 +19,7 @@ import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1407,7 +1408,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     public SimpleInstruction visitI64TruncF32U(Instruction.I64TruncF32U inst) throws Validator.ValidationException {
         return convert(ValType.F32, ValType.I64, visitor -> {
             visitor.visitInsn(Opcodes.F2D);
-            BytecodeHelper.callNamedStaticMethod("doubleToUnsignedLong", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "doubleToUnsignedLong", "(D)J", false);
         });
     }
 
@@ -1421,7 +1422,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI64TruncF64U(Instruction.I64TruncF64U inst) throws Validator.ValidationException {
         return convert(ValType.F64, ValType.I64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("doubleToUnsignedLong", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "doubleToUnsignedLong", "(D)J", false);
         });
     }
 
@@ -1458,7 +1459,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitF32ConvertI64U(Instruction.F32ConvertI64U inst) throws Validator.ValidationException {
         return convert(ValType.I64, ValType.F32, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("unsignedLongToDouble", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "unsignedLongToDouble", "(J)D", false);
             visitor.visitInsn(Opcodes.D2F);
         });
     }
@@ -1497,7 +1498,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitF64ConvertI64U(Instruction.F64ConvertI64U inst) throws Validator.ValidationException {
         return convert(ValType.I64, ValType.F64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("unsignedLongToDouble", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "unsignedLongToDouble", "(J)D", false);
         });
     }
 
@@ -1585,7 +1586,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI32TruncSatF32S(Instruction.I32TruncSatF32S inst) throws Validator.ValidationException {
         return convert(ValType.F32, ValType.I32, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatFloatToIntSigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatFloatToIntSigned", "(F)I", false);
         });
     }
 
@@ -1598,7 +1599,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI32TruncSatF32U(Instruction.I32TruncSatF32U inst) throws Validator.ValidationException {
         return convert(ValType.F32, ValType.I32, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatFloatToIntUnsigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatFloatToIntUnsigned", "(F)I", false);
         });
     }
 
@@ -1611,7 +1612,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI32TruncSatF64S(Instruction.I32TruncSatF64S inst) throws Validator.ValidationException {
         return convert(ValType.F64, ValType.I32, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatDoubleToIntSigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatDoubleToIntSigned", "(D)I", false);
         });
     }
 
@@ -1624,7 +1625,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI32TruncSatF64U(Instruction.I32TruncSatF64U inst) throws Validator.ValidationException {
         return convert(ValType.F64, ValType.I32, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatDoubleToIntUnsigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatDoubleToIntUnsigned", "(D)I", false);
         });
     }
 
@@ -1637,7 +1638,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI64TruncSatF32S(Instruction.I64TruncSatF32S inst) throws Validator.ValidationException {
         return convert(ValType.F32, ValType.I64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatFloatToLongSigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatFloatToLongSigned", "(F)J", false);
         });
     }
 
@@ -1650,7 +1651,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI64TruncSatF32U(Instruction.I64TruncSatF32U inst) throws Validator.ValidationException {
         return convert(ValType.F32, ValType.I64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatFloatToLongUnsigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatFloatToLongUnsigned", "(F)J", false);
         });
     }
 
@@ -1663,7 +1664,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI64TruncSatF64S(Instruction.I64TruncSatF64S inst) throws Validator.ValidationException {
         return convert(ValType.F64, ValType.I64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatDoubleToLongSigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatDoubleToLongSigned", "(D)J", false);
         });
     }
 
@@ -1676,7 +1677,7 @@ public class InstructionConversionVisitor extends InstructionVisitor<SimpleInstr
     @Override
     public SimpleInstruction visitI64TruncSatF64U(Instruction.I64TruncSatF64U inst) throws Validator.ValidationException {
         return convert(ValType.F64, ValType.I64, visitor -> {
-            BytecodeHelper.callNamedStaticMethod("truncSatDoubleToLongUnsigned", visitor, InstructionConversionVisitor.class);
+            visitor.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(InstructionConversionVisitor.class), "truncSatDoubleToLongUnsigned", "(D)J", false);
         });
     }
 
