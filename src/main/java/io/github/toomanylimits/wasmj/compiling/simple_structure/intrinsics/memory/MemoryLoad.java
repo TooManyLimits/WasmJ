@@ -58,10 +58,10 @@ public record MemoryLoad(String loadDescriptor, ValType type, boolean unsigned, 
             visitor.visitCode();
 
             if (BytecodeHelper.DEBUG_PRINTS_ENABLED) {
-                BytecodeHelper.debugPrint(visitor, "Loading " + loadDescriptor + " from memory. Offset = ");
-                visitor.visitVarInsn(Opcodes.ILOAD, 1);
-                BytecodeHelper.debugPrintInt(visitor);
-                visitor.visitInsn(Opcodes.POP);
+                 BytecodeHelper.debugPrint(visitor, "Loading " + loadDescriptor + " from memory. Offset = ");
+                 visitor.visitVarInsn(Opcodes.ILOAD, 1);
+                 BytecodeHelper.debugPrintInt(visitor);
+                 visitor.visitInsn(Opcodes.POP);
             }
 
             // Params = [index, offset]

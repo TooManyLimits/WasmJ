@@ -9,11 +9,16 @@ public class Names {
     public static String className(String moduleName) { return "wasmj_modules/" + moduleName; }
     public static String initMethodName() { return "init"; }
     public static String limiterFieldName() { return "limiter"; }
+    public static String exportedFunctionsFieldName() { return "exportedFunctions"; }
+
+    // The special externref table key, used for @ExternrefTableAccess, and the table allocator function name
+    public static final String SPECIAL_EXTERNREF_TABLE_EXPORT_KEY = "wasmj-externref";
+    public static String externrefTableAccessorImplClassName(String moduleName) { return "accessor_impls/" + moduleName; }
+    public static String externrefTableAccessorFieldName() { return "externrefTableAccessor"; }
 
     // Data / elements
     public static String dataFieldName(int declaredIndex) { return "data_" + declaredIndex; }
     public static String elemFieldName(int declaredIndex) { return "elem_" + declaredIndex; }
-
 
     // Functions
     public static String funcName(int declaredIndex) { return "func_" + declaredIndex; }

@@ -248,7 +248,8 @@ public class CompilingSimpleInstructionVisitor extends SimpleInstructionVisitor<
                     visitor.visitVarInsn(Opcodes.ASTORE, getNextLocalSlot());
                 }
             }
-            // Now that it's in the temp local, let's pop off the remaining types
+            // TODO: decrement all locals ref-counts? do we have externref locals?
+            // Now that it's in the temp local, let's pop off the remaining types for ref counting:
             for (ValType poppedType : inst.restOfStack()) {
                 visitPop(new SimpleInstruction.Pop(poppedType));
             }
@@ -290,6 +291,9 @@ public class CompilingSimpleInstructionVisitor extends SimpleInstructionVisitor<
     public Void visitCallIndirect(SimpleInstruction.CallIndirect inst) throws RuntimeException {
         // Stack = [args, index]
         visitIntrinsic(new TableGet(inst.tableIndex())); // [args, funcref]
+
+        BytecodeHelper.debugPrintln(visitor, "Performing call_indirect!");
+
         visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class)); // [args, funcref]
         visitor.visitFieldInsn(Opcodes.GETFIELD, Type.getInternalName(FuncRefInstance.class), "handle", Type.getDescriptor(MethodHandle.class)); // [args, handle]
         // Now we need to put the handle below all the args.

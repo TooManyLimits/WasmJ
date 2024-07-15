@@ -15,6 +15,8 @@ import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.TraceClassVisitor;
 
 import java.io.PrintWriter;
+import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
@@ -28,7 +30,7 @@ public class WasmInstance {
     private final CustomWasmJLoader loader = new CustomWasmJLoader(new HashMap<>(), WasmInstance.class.getClassLoader(), false);
     public final InstanceLimiter limiter;
 
-    private final Set<String> wasmModuleNames = new HashSet<>();
+    public final List<String> wasmModuleNames = new ArrayList<>();
     public final Map<String, JavaModuleData<?>> instanceJavaModules = new HashMap<>();
 
     // The parameters to this are just used to create an InstanceLimiter for sandboxing.
@@ -44,8 +46,8 @@ public class WasmInstance {
         wasmModuleNames.add(moduleName);
         // Compile the module and add it to the custom classloader
         SimpleModule simple = new SimpleModule(moduleName, module, this);
-        byte[] compiled = Compiler.compile(simple);
-        loader.classes.put(Names.className(moduleName), compiled);
+        Map<String, byte[]> compiled = Compiler.compile(simple);
+        loader.classes.putAll(compiled);
         // Get the wasm class and call the init method.
         try {
             Class<?> c = getWasmClass(moduleName);
@@ -132,33 +134,25 @@ public class WasmInstance {
     }
 
     /**
+     * Get all the exported functions in the given module.
+     * If the module doesn't exist, returns an empty list.
+     */
+    public List<ExportedFunction> exportedFunctions(String wasmModuleName) {
+        Class<?> wasmClass = getWasmClass(wasmModuleName);
+        if (wasmClass == null) return List.of();
+        try {
+            return (List<ExportedFunction>) MethodHandles.lookup().findStaticGetter(wasmClass, Names.exportedFunctionsFieldName(), List.class).invokeExact();
+        } catch (Throwable e) {
+            throw new IllegalStateException("Failed to get exportedFunctions field? Bug in WasmJ, please report!", e);
+        }
+    }
+
+    /**
      * Gets the exported function in the given module with the given name.
      * If there is no such function, returns null.
      */
     public ExportedFunction getExportedFunction(String wasmModuleName, String exportName) {
-        // Find the Method
-        Class<?> wasmClass = getWasmClass(wasmModuleName);
-        if (wasmClass == null) return null;
-        String desiredName = Names.exportFuncName(exportName);
-        Method m = ListUtils.first(Arrays.asList(wasmClass.getDeclaredMethods()), me -> me.getName().equals(desiredName));
-        if (m == null) return null;
-        // If we count memory, decrement ref-counts
-        if (limiter.countsMemory) {
-            return args -> {
-                Object res = m.invoke(null, args);
-                // Decrement ref counts if the results are refcountable
-                if (res instanceof RefCountable refCountable)
-                    refCountable.dec(limiter);
-                else
-                    for (Object o : (Object[]) res)
-                        if (o instanceof RefCountable refCountable)
-                            refCountable.dec(limiter);
-                return res;
-            };
-        } else {
-            return args -> m.invoke(null, args);
-        }
-
+        return ListUtils.first(exportedFunctions(wasmModuleName), func -> func.name.endsWith(exportName));
     }
 
     /**

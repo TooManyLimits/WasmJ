@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.compiling.simple_structure.members;
 
+import io.github.toomanylimits.wasmj.compiling.compiler.Compiler;
 import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.helpers.CallingHelpers;
@@ -9,10 +10,14 @@ import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.ClassGenCallback;
 import io.github.toomanylimits.wasmj.parsing.instruction.StackType;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
+import io.github.toomanylimits.wasmj.runtime.ExportedFunction;
+import io.github.toomanylimits.wasmj.runtime.ExternrefTableAccessor;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import org.objectweb.asm.*;
 
+import java.lang.invoke.MethodHandle;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -28,13 +33,19 @@ public interface SimpleFunction {
 
     /**
      * Emit the code needed for calling this function into the class, as well as the function definition if applicable.
+     * If this is an exported function, also emit the exports, and add them to the list in the init function.
      */
-    void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks);
+    void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks);
 
     /**
      * Get a Handle object from ASM referring to this function
      */
     Handle getHandle(SimpleModule declaringModule);
+
+    /**
+     * Get the stack type of this function
+     */
+    StackType funcType();
 
     /**
      * A WASM function which is defined in the current module.
@@ -48,29 +59,31 @@ public interface SimpleFunction {
             String className = Names.className(callingModule.moduleName);
             String methodName = Names.funcName(declaredIndex);
             String descriptor = funcType.descriptor();
-            BytecodeHelper.debugPrintln(visitor, "Calling " + methodName);
+            // BytecodeHelper.debugPrintln(visitor, "Calling " + methodName);
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, descriptor, false);
-            BytecodeHelper.debugPrintln(visitor, "Returned from " + methodName);
+            // BytecodeHelper.debugPrintln(visitor, "Returned from " + methodName);
             // Return values
             CallingHelpers.unwrapReturnValues(visitor, compilingVisitor, funcType, false); // Never refcount in Wasm -> Wasm
         }
         @Override
-        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
+        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Create the method visitor
             String funcName = Names.funcName(declaredIndex);
             String descriptor = funcType.descriptor();
+
             MethodVisitor methodVisitor = classWriter.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, funcName, descriptor, null, null);
             methodVisitor.visitCode();
+
             // Write the function body into the method visitor, using a CompilingSimpleInstructionVisitor
             CompilingSimpleInstructionVisitor visitor = new CompilingSimpleInstructionVisitor(declaringModule, methodVisitor, nextLocalSlot, classGenCallbacks);
             visitor.emitMultipleInstructions(instructions);
+
             // End the method
             methodVisitor.visitMaxs(0, 0);
             methodVisitor.visitEnd();
 
             // If this is exported, then create the exported function
             if (exportedAs != null) {
-
                 MethodVisitor exported = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportFuncName(exportedAs), descriptor, null, null);
                 exported.visitCode();
                 int index = 0;
@@ -86,6 +99,29 @@ public interface SimpleFunction {
                 }
                 exported.visitMaxs(0, 0);
                 exported.visitEnd();
+
+                // Also, add this exported function to the exported functions list during the init function:
+                initFunction.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), Names.exportedFunctionsFieldName(), Type.getDescriptor(List.class)); // [list]
+                initFunction.visitTypeInsn(Opcodes.NEW, Type.getInternalName(ExportedFunction.class)); // [list, uninit exportedFunction]
+                initFunction.visitInsn(Opcodes.DUP); // [list, uninit exportedFunction, uninit exportedFunction]
+                initFunction.visitLdcInsn(exportedAs); // [list, uninit exportedFunction, uninit exportedFunction, name]
+                initFunction.visitLdcInsn(getHandle(declaringModule)); // [list, uninit exportedFunction, uninit exportedFunction, name, handle]
+                if (funcType.outTypes().size() > 1) {
+                    BytecodeHelper.createDefaultObject(initFunction, ArrayList.class); // [list, uninit exportedFunction, uninit exportedFunction, name, handle, returnlist]
+                    for (ValType t : funcType.outTypes()) {
+                        initFunction.visitInsn(Opcodes.DUP); // [..., returnlist, returnlist]
+                        initFunction.visitFieldInsn(Opcodes.GETSTATIC, Type.getInternalName(ValType.class), t.name(), Type.getDescriptor(ValType.class)); // [..., returnlist, returnlist, field]
+                        initFunction.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.getInternalName(List.class), "add", "(" + Type.getDescriptor(Object.class) + ")Z", true); // [..., returnlist, bool]
+                        initFunction.visitInsn(Opcodes.POP); // [..., returnlist]
+                    }
+                } else {
+                    initFunction.visitInsn(Opcodes.ACONST_NULL); // [list, uninit exportedFunction, uninit exportedFunction, name, handle, null]
+                }
+                initFunction.visitVarInsn(Opcodes.ALOAD, Compiler.INIT_FUNCTION_LIMITER_LOCAL); // [list, uninit exportedFunction, uninit exportedFunction, name, handle, returnlist, limiter]
+                String constructorDescriptor = "(" + Type.getDescriptor(String.class) + Type.getDescriptor(MethodHandle.class) + Type.getDescriptor(List.class) + Type.getDescriptor(InstanceLimiter.class) + ")V";
+                initFunction.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(ExportedFunction.class), "<init>", constructorDescriptor, false); // [list, init exportedFunction]
+                initFunction.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.getInternalName(List.class), "add", "(" + Type.getDescriptor(Object.class) + ")Z", true); // [bool]
+                initFunction.visitInsn(Opcodes.POP); // []
             }
         }
 
@@ -111,7 +147,7 @@ public interface SimpleFunction {
             CallingHelpers.unwrapReturnValues(visitor, compilingVisitor, funcType, false); // Never refcount in Wasm -> Wasm
         }
         @Override
-        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
+        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Do nothing, the function was emitted in another module, unless we need to re-export it
             if (exportedAs != null) {
                 throw new IllegalStateException("Re-exporting imported members is TODO");
@@ -131,10 +167,14 @@ public interface SimpleFunction {
     record ImportedJavaFunction(int funcImportIndex, StackType funcType, String javaModuleName, JavaModuleData<?> moduleData, JavaModuleData.MethodData methodData) implements SimpleFunction {
         @Override
         public void emitCall(SimpleModule callingModule, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor) {
-            // Fetch the byte[] and/or the limiter, if the function needs them
+            // Fetch additional parameters if the method needs them:
             if (methodData.hasByteArrayAccess()) {
                 // If the func has byte array access, put the byte array on the stack
                 callingModule.memory.getMemory(callingModule, visitor);
+            }
+            if (methodData.hasExternrefTableAccess()) {
+                // Get the table accessor impl on the stack
+                visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(callingModule.moduleName), Names.externrefTableAccessorFieldName(), Type.getDescriptor(ExternrefTableAccessor.class));
             }
             if (methodData.hasLimiterAccess()) {
                 // Get the limiter and put on the stack
@@ -162,7 +202,7 @@ public interface SimpleFunction {
         }
 
         @Override
-        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
+        public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Only thing to do is emit glue if necessary.
             if (methodData.needsGlue()) {
                 methodData.writeGlue(classWriter, Names.glueFuncName(funcImportIndex), declaringModule.moduleName, javaModuleName, declaringModule.instance.limiter.countsMemory);

@@ -1,5 +1,6 @@
 package io.github.toomanylimits.wasmj.compiling.simple_structure;
 
+import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleData;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleElem;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleFunction;
@@ -44,6 +45,8 @@ public class SimpleModule {
     public final SimpleData[] datas; // All datas
     public final SimpleElem[] elems; // All elems
 
+    // Index of the special externref table. -1 if there is no such table.
+    private int externrefTableIndex = -1;
 
     /**
      * To create a SimpleModule, we need to give it:
@@ -146,8 +149,11 @@ public class SimpleModule {
             // Get adjusted defaultIndex and type
             int adjustedIndex = i - wasmModule.tableImports().size();
             TableType tableType = wasmModule.tables.get(adjustedIndex);
-            // Create the global and store it
+            // Create the table and store it.
             String exportedAs = exportedTables.get(i);
+            // Check if it's the special table:
+            if (Names.SPECIAL_EXTERNREF_TABLE_EXPORT_KEY.equals(exportedAs))
+                this.externrefTableIndex = i;
             this.tables[i] = new SimpleTable.SameFileTable(adjustedIndex, tableType, exportedAs);
         }
 
@@ -207,6 +213,9 @@ public class SimpleModule {
 
     }
 
+    public int getExternrefTableIndex() {
+        return externrefTableIndex;
+    }
 
 
 }

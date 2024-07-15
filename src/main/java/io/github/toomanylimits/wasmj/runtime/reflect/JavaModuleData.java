@@ -3,10 +3,7 @@ package io.github.toomanylimits.wasmj.runtime.reflect;
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
-import io.github.toomanylimits.wasmj.runtime.reflect.annotations.ByteArrayAccess;
-import io.github.toomanylimits.wasmj.runtime.reflect.annotations.LimiterAccess;
-import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJAllow;
-import io.github.toomanylimits.wasmj.runtime.reflect.annotations.WasmJRename;
+import io.github.toomanylimits.wasmj.runtime.reflect.annotations.*;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import io.github.toomanylimits.wasmj.util.ListUtils;
@@ -103,6 +100,9 @@ public class JavaModuleData<T> {
 
         public boolean hasByteArrayAccess() {
             return method.isAnnotationPresent(ByteArrayAccess.class);
+        }
+        public boolean hasExternrefTableAccess() {
+            return method.isAnnotationPresent(ExternrefTableAccess.class);
         }
         public boolean hasLimiterAccess() {
             return method.isAnnotationPresent(LimiterAccess.class);

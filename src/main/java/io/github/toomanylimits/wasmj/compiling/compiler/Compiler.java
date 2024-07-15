@@ -1,17 +1,24 @@
 package io.github.toomanylimits.wasmj.compiling.compiler;
 
+import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleData;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.data.SimpleElem;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.table.TableGet;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.table.TableGrow;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.table.TableSet;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleFunction;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleGlobal;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.ClassGenCallback;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.members.SimpleTable;
 import io.github.toomanylimits.wasmj.parsing.module.Data;
+import io.github.toomanylimits.wasmj.runtime.ExternrefTableAccessor;
 import io.github.toomanylimits.wasmj.runtime.reflect.JavaModuleData;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import org.objectweb.asm.*;
+import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
@@ -20,9 +27,7 @@ import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Logic for compiling a SimpleModule into a byte[], stored in its own class
@@ -38,29 +43,24 @@ public class Compiler {
     public static final int WASM_PAGE_SIZE = 65536;
 
     /**
-     * Compile a module into a byte[] which can be given to a ClassLoader.
+     * Compile a module into a set of byte[]s which can be given to a ClassLoader.
      */
-    public static byte[] compile(SimpleModule module) {
+    public static Map<String, byte[]> compile(SimpleModule module) {
         // Create and begin the class writer
         ClassVisitor classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
         classWriter = new CheckClassAdapter(classWriter);
-//        try {
-//            classWriter = new TraceClassVisitor(classWriter, new PrintWriter(Files.newOutputStream(Path.of(
-//              "C:\\Users\\Maya\\Desktop\\visage\\jvm_bytecode.txt"
-//            ), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)));
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
+
         String className = Names.className(module.moduleName);
         classWriter.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
 
         // Create callback set
         HashSet<ClassGenCallback> classGenCallbacks = new HashSet<>();
-        // Create init function
+        // Create necessary functions
+        byte[] tableAccessorImplWriter = createExternRefTableAccessor(module, classGenCallbacks);
         MethodVisitor initFunction = beginInitMethod(classWriter, module.instance.instanceJavaModules, module.moduleName);
 
         // Emit the members
-        for (SimpleFunction f : module.functions) f.emitFunction(module, classWriter, classGenCallbacks);
+        for (SimpleFunction f : module.functions) f.emitFunction(module, classWriter, initFunction, classGenCallbacks);
         for (SimpleGlobal g : module.globals) g.emitGlobal(module, classWriter, initFunction, classGenCallbacks);
         for (SimpleTable t : module.tables) t.emitTable(module, classWriter, initFunction, classGenCallbacks);
         module.memory.emitMemory(module, classWriter, initFunction, classGenCallbacks);
@@ -84,10 +84,16 @@ public class Compiler {
             classGenCallbacks.addAll(newCallbacks);
         }
 
-        // End writer and return
+        // End the writer and return it as a byte array
         classWriter.visitEnd();
-//        return ((ClassWriter) classWriter.getDelegate().getDelegate()).toByteArray();
-        return ((ClassWriter) classWriter.getDelegate()).toByteArray();
+        while (!(classWriter instanceof ClassWriter writer))
+            classWriter = classWriter.getDelegate();
+
+        // Return the generated classes, keyed by name
+        return Map.of(
+                Names.className(module.moduleName), writer.toByteArray(),
+                Names.externrefTableAccessorImplClassName(module.moduleName), tableAccessorImplWriter
+        );
     }
 
     /**
@@ -107,6 +113,18 @@ public class Compiler {
         init.visitCode();
         init.visitVarInsn(Opcodes.ALOAD, INIT_FUNCTION_LIMITER_LOCAL); // [limiter]
         init.visitFieldInsn(Opcodes.PUTSTATIC, Names.className(moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // []
+
+        // Create the exportedFunctions field and fill it in
+        writer.visitField(Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC, Names.exportedFunctionsFieldName(), Type.getDescriptor(List.class), null, null);
+        BytecodeHelper.createDefaultObject(init, ArrayList.class);
+        init.visitFieldInsn(Opcodes.PUTSTATIC, Names.className(moduleName), Names.exportedFunctionsFieldName(), Type.getDescriptor(List.class)); // []
+
+        // Creeate and fill in the externref accessor field
+        writer.visitField(Opcodes.ACC_PRIVATE + Opcodes.ACC_STATIC, Names.externrefTableAccessorFieldName(), Type.getDescriptor(ExternrefTableAccessor.class), null, null);
+        init.visitTypeInsn(Opcodes.NEW, Names.externrefTableAccessorImplClassName(moduleName)); // [uninit accessor impl]
+        init.visitInsn(Opcodes.DUP); // [uninit accessor impl, uninit accessor impl]
+        init.visitMethodInsn(Opcodes.INVOKESPECIAL, Names.externrefTableAccessorImplClassName(moduleName), "<init>", "()V", false); // [init accessor impl]
+        init.visitFieldInsn(Opcodes.PUTSTATIC, Names.className(moduleName), Names.externrefTableAccessorFieldName(), Type.getDescriptor(ExternrefTableAccessor.class)); // []
 
         // Create the global instance fields and fill them in
         for (Map.Entry<String, JavaModuleData<?>> javaModule : javaModules.entrySet()) {
@@ -129,10 +147,107 @@ public class Compiler {
     }
 
     /**
-     * Emit the given data.
+     * Create the externref table accessor class and return its bytes.
+     * Returns the ClassWriter for the accessor implementation.
      */
-    private static void emitData(int dataIndex, Data data, SimpleModule module, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
+    private static byte[] createExternRefTableAccessor(SimpleModule module, Set<ClassGenCallback> classGenCallbacks) {
+        // Create the new class:
+        ClassWriter accessorImpl = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+        String accessorImplName = Names.externrefTableAccessorImplClassName(module.moduleName);
+        accessorImpl.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, accessorImplName, null, Type.getInternalName(Object.class), new String[] {Type.getInternalName(ExternrefTableAccessor.class)} );
 
+        // Give it a basic default constructor:
+        MethodVisitor constructor = accessorImpl.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+        constructor.visitCode();
+        constructor.visitVarInsn(Opcodes.ALOAD, 0);
+        constructor.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(Object.class), "<init>", "()V", false);
+        constructor.visitInsn(Opcodes.RETURN);
+        constructor.visitMaxs(0, 0);
+        constructor.visitEnd();
+
+        // Implement the methods.
+        int index = module.getExternrefTableIndex();
+
+        // get():
+        MethodVisitor getter = accessorImpl.visitMethod(Opcodes.ACC_PUBLIC, "get", "(I)" + Type.getDescriptor(RefCountable.class), null, null);
+        getter.visitCode();
+        if (index == -1)
+            BytecodeHelper.throwRuntimeError(getter, "No externref table provided! Unable to get() value!");
+        else {
+            CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(module, getter, 2, classGenCallbacks);
+            getter.visitVarInsn(Opcodes.ILOAD, 1); // [index]
+            compilingVisitor.visitIntrinsic(new TableGet(index)); // [table[index]], ref count was incremented
+            getter.visitInsn(Opcodes.ARETURN);
+        }
+        getter.visitMaxs(0, 0);
+        getter.visitEnd();
+
+        // set():
+        MethodVisitor setter = accessorImpl.visitMethod(Opcodes.ACC_PUBLIC, "set", "(I" + Type.getDescriptor(RefCountable.class) + ")V", null, null);
+        setter.visitCode();
+        if (index == -1)
+            BytecodeHelper.throwRuntimeError(setter, "No externref table provided! Unable to set() value!");
+        else {
+            CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(module, setter, 3, classGenCallbacks);
+            setter.visitVarInsn(Opcodes.ILOAD, 1); // [index]
+            setter.visitVarInsn(Opcodes.ALOAD, 2); // [index, value]
+            compilingVisitor.visitIntrinsic(new TableSet(index)); // [], value was set, ref count of previous item was decremented
+            setter.visitInsn(Opcodes.RETURN);
+        }
+        setter.visitMaxs(0, 0);
+        setter.visitEnd();
+
+        // store():
+        MethodVisitor store = accessorImpl.visitMethod(Opcodes.ACC_PUBLIC, "store", "(" + Type.getDescriptor(RefCountable.class) + ")I", null, null);
+        store.visitCode();
+        if (index == -1)
+            BytecodeHelper.throwRuntimeError(store, "No externref table provided! Unable to store() value!");
+        else {
+            // Get the array and look for a null element.
+            module.tables[index].getTable(module, store); // [table]
+            store.visitInsn(Opcodes.DUP); // [table, table]
+            String asListDescriptor = Type.getMethodDescriptor(Type.getType(List.class), Type.getType(Object[].class));
+            store.visitMethodInsn(Opcodes.INVOKESTATIC, Type.getInternalName(Arrays.class), "asList", asListDescriptor, false); // [table, Arrays.asList(table)]
+            store.visitInsn(Opcodes.ACONST_NULL); // [table, Arrays.asList(table), null]
+            String indexOfDescriptor = Type.getMethodDescriptor(Type.getType(int.class), Type.getType(Object.class));
+            store.visitMethodInsn(Opcodes.INVOKEINTERFACE, Type.getInternalName(List.class), "indexOf", indexOfDescriptor, true); // [table, Arrays.asList(table).indexOf(null)]
+
+            // If -1, no element was found, so grow the array.
+            store.visitInsn(Opcodes.DUP); // [table, index, index]
+            store.visitInsn(Opcodes.ICONST_M1); // [table, index, index, -1]
+            BytecodeHelper.writeIfElse(store, Opcodes.IF_ICMPEQ, ifFound -> {
+                // [table, index]
+                // Count up instructions if necessary
+                if (module.instance.limiter.countsInstructions) {
+                    ifFound.visitInsn(Opcodes.DUP); // [index, index]
+                    ifFound.visitFieldInsn(Opcodes.GETSTATIC, Names.className(module.moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [index, index, limiter]
+                    ifFound.visitInsn(Opcodes.SWAP); // [index, limiter, index]
+                    ifFound.visitInsn(Opcodes.I2L); // [index, limiter, (long) index]
+                    ifFound.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(InstanceLimiter.class), "incInstructions", "(J)V", false); // [index]
+                }
+                // Return the found index
+                ifFound.visitInsn(Opcodes.IRETURN);
+            }, ifNotFound -> {
+                // Double the table size + 1, and return a new index
+                CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(module, ifNotFound, 2, classGenCallbacks);
+                // [table, -1]
+                ifNotFound.visitInsn(Opcodes.POP); // [table]
+                ifNotFound.visitInsn(Opcodes.ARRAYLENGTH); // [table.length]
+                ifNotFound.visitInsn(Opcodes.ICONST_1); // [table.length, 1]
+                ifNotFound.visitInsn(Opcodes.IADD); // [table.length + 1]
+                ifNotFound.visitInsn(Opcodes.ACONST_NULL); // [table.length + 1, null]
+                ifNotFound.visitInsn(Opcodes.SWAP); // [null, table.length + 1]
+                compilingVisitor.visitIntrinsic(new TableGrow(index)); // [oldTable.length]
+                // The oldTable.length, conveniently enough, is now the first non-null index, so return it.
+                ifNotFound.visitInsn(Opcodes.IRETURN);
+            });
+        }
+        store.visitMaxs(0, 0);
+        store.visitEnd();
+
+        // Methods are implemented, end the accessor impl.
+        accessorImpl.visitEnd();
+        return accessorImpl.toByteArray();
     }
 
 }

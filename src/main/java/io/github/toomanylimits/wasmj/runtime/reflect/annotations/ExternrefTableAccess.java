@@ -7,15 +7,14 @@ import java.lang.annotation.Target;
 
 /**
  * Annotate a method with this. It signifies that the method
- * needs access to the InstanceLimiter of the caller. Here,
- * you may access the limiting variables (such as the number
- * of instructions executed, or JVM heap used) and modify them
- * as necessary.
+ * needs access to the special externref array of the caller.
+ * (For example, converting RefCountable to/from integers).
  *
- * This should come after the ExternrefTableAccessor from the @ExternrefTableAccess annotation, if that one is present.
+ * The ExternRefTableAccessor parameter should come after the byte[] parameter
+ * from @ByteArrayAccess.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
-public @interface LimiterAccess {
+public @interface ExternrefTableAccess {
 
 }

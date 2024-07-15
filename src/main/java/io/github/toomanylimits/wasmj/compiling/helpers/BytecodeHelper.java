@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Consumer;
 
 public class BytecodeHelper {
     // Get the number of stack slots the given class takes up
@@ -148,6 +149,18 @@ public class BytecodeHelper {
         visitor.visitInsn(Opcodes.ICONST_1); // Succeeded, push 1
         visitor.visitLabel(end);
     }
+
+    public static void writeIfElse(MethodVisitor visitor, int skipOpcode, Consumer<MethodVisitor> trueBranch, Consumer<MethodVisitor> falseBranch) {
+        Label elseBranch = new Label();
+        Label done = new Label();
+        visitor.visitJumpInsn(skipOpcode, elseBranch);
+        trueBranch.accept(visitor);
+        visitor.visitJumpInsn(Opcodes.GOTO, done);
+        visitor.visitLabel(elseBranch);
+        falseBranch.accept(visitor);
+        visitor.visitLabel(done);
+    }
+
     // Emit bytecode that pops a value of the given type
     public static void popValue(MethodVisitor visitor, ValType type) {
         switch (type.stackSlots) {
@@ -208,7 +221,7 @@ public class BytecodeHelper {
     }
 
     // Emit bytecode that does debug printing of various kinds
-    public static final boolean DEBUG_PRINTS_ENABLED = true;
+    public static final boolean DEBUG_PRINTS_ENABLED = false;
     public static void debugPrintln(MethodVisitor visitor, String message) {
         if (DEBUG_PRINTS_ENABLED) {
             visitor.visitFieldInsn(Opcodes.GETSTATIC, Type.getInternalName(System.class), "out", Type.getDescriptor(PrintStream.class));

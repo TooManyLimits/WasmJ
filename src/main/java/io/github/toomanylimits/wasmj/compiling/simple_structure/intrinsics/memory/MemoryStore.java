@@ -49,10 +49,10 @@ public record MemoryStore(ValType type, String storeDescriptor, int offset) impl
             visitor.visitCode();
 
             if (BytecodeHelper.DEBUG_PRINTS_ENABLED) {
-                BytecodeHelper.debugPrint(visitor, "Storing " + storeDescriptor + " to memory. Offset = ");
-                visitor.visitVarInsn(Opcodes.ILOAD, 1 + type.stackSlots);
-                BytecodeHelper.debugPrintInt(visitor);
-                visitor.visitInsn(Opcodes.POP);
+                 BytecodeHelper.debugPrint(visitor, "Storing " + storeDescriptor + " to memory. Offset = ");
+                 visitor.visitVarInsn(Opcodes.ILOAD, 1 + type.stackSlots);
+                 BytecodeHelper.debugPrintInt(visitor);
+                 visitor.visitInsn(Opcodes.POP);
             }
 
             // Params: [index, value, offset]
