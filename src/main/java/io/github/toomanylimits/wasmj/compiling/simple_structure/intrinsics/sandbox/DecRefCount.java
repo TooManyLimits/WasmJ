@@ -1,13 +1,18 @@
 package io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox;
 
 import io.github.toomanylimits.wasmj.compiling.compiler.CompilingSimpleInstructionVisitor;
+import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleInstruction;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
 import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.ClassGenCallback;
+import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
+import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
 
 /**
- * Decrement the refcount of the object on top of the stack.
+ * Pops a RefCountable from the top of the stack and decrements its refcount.
  */
 public class DecRefCount implements SimpleInstruction.Intrinsic {
 
@@ -18,16 +23,14 @@ public class DecRefCount implements SimpleInstruction.Intrinsic {
     public void atCallSite(SimpleModule module, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor) {
         if (!module.instance.limiter.countsMemory)
             throw new IllegalStateException("DecRefCount intrinsic should only be generated when the module counts memory - bug in compiler!");
-        throw new UnsupportedOperationException("TODO");
+        // Get limiter, call dec().
+        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(module.moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class));
+        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(RefCountable.class), "dec", Type.getMethodDescriptor(Type.getType(void.class), Type.getType(InstanceLimiter.class)), false);
     }
 
     @Override
     public ClassGenCallback classGenCallback() {
-        return (module, classVisitor) -> {
-            if (!module.instance.limiter.countsMemory)
-                throw new IllegalStateException("DecRefCount intrinsic should only be generated when the module counts memory - bug in compiler!");
-            throw new UnsupportedOperationException("TODO");
-        };
+        return null;
     }
 
 }

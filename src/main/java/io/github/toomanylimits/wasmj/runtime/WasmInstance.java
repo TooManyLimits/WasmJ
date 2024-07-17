@@ -152,7 +152,7 @@ public class WasmInstance {
      * If there is no such function, returns null.
      */
     public ExportedFunction getExportedFunction(String wasmModuleName, String exportName) {
-        return ListUtils.first(exportedFunctions(wasmModuleName), func -> func.name.endsWith(exportName));
+        return ListUtils.first(exportedFunctions(wasmModuleName), func -> func.name.equals(exportName));
     }
 
     /**

@@ -22,6 +22,9 @@ public interface SimpleGlobal {
     void emitSet(SimpleModule callingModule, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor);
     void emitGlobal(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks);
 
+    String exportedAs();
+    GlobalType globalType();
+
     /**
      * A global variable defined in the same file!
      */
@@ -69,35 +72,7 @@ public interface SimpleGlobal {
             this.emitSet(declaringModule, initFunction, initCompilingVisitor);
 
             // Emit export
-            if (exportedAs != null) {
-                // Export getter and setter methods
-                MethodVisitor getter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportGlobalGetterName(exportedAs), "()" + descriptor, null, null);
-                getter.visitCode();
-                getter.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), name, descriptor);
-                // If it's a ref type, and we count memory, increment the ref count
-                if (declaringModule.instance.limiter.countsMemory && globalType.valType().isRef()) {
-                    CompilingSimpleInstructionVisitor getterCompilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, getter, 0, classGenCallbacks);
-                    getter.visitInsn(Opcodes.DUP);
-                    getterCompilingVisitor.visitIntrinsic(IncRefCount.INSTANCE);
-                }
-                getter.visitInsn(globalType.valType().returnOpcode);
-                getter.visitMaxs(0, 0);
-                getter.visitEnd();
-
-                MethodVisitor setter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportGlobalSetterName(exportedAs), "(" + descriptor + ")V", null, null);
-                setter.visitCode();
-                // If it's a ref type, and we count memory, decrement the ref count of the object previously inside the global
-                if (declaringModule.instance.limiter.countsMemory && globalType.valType().isRef()) {
-                    CompilingSimpleInstructionVisitor setterCompilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, setter, globalType.valType().stackSlots, classGenCallbacks);
-                    setter.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), name, descriptor);
-                    setterCompilingVisitor.visitIntrinsic(DecRefCount.INSTANCE);
-                }
-                setter.visitVarInsn(globalType.valType().loadOpcode, 0);
-                setter.visitFieldInsn(Opcodes.PUTSTATIC, Names.className(declaringModule.moduleName), name, descriptor);
-                setter.visitInsn(Opcodes.RETURN);
-                setter.visitMaxs(0, 0);
-                setter.visitEnd();
-            }
+            SimpleGlobal.export(this, declaringModule, classWriter, classGenCallbacks);
         }
     }
 
@@ -119,10 +94,34 @@ public interface SimpleGlobal {
         @Override
         public void emitGlobal(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Do nothing, the global was emitted in another module, unless we need to re-export it
-            if (exportedAs != null) {
-                throw new IllegalStateException("Re-exporting imported members is TODO");
-            }
+            SimpleGlobal.export(this, declaringModule, classWriter, classGenCallbacks);
         }
     }
+
+    private static void export(SimpleGlobal global, SimpleModule module, ClassVisitor classWriter, Set<ClassGenCallback> classGenCallbacks) {
+        String exportedAs = global.exportedAs();
+        if (exportedAs != null) {
+            GlobalType globalType = global.globalType();
+            String descriptor = globalType.valType().descriptor;
+            // Export getter and setter methods
+            MethodVisitor getter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportGlobalGetterName(exportedAs), "()" + descriptor, null, null);
+            CompilingSimpleInstructionVisitor getterCompilingVisitor = new CompilingSimpleInstructionVisitor(module, getter, 0, classGenCallbacks);
+            getter.visitCode();
+            global.emitGet(module, getter, getterCompilingVisitor);
+            getter.visitInsn(globalType.valType().returnOpcode);
+            getter.visitMaxs(0, 0);
+            getter.visitEnd();
+
+            MethodVisitor setter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportGlobalSetterName(exportedAs), "(" + descriptor + ")V", null, null);
+            CompilingSimpleInstructionVisitor setterCompilingVisitor = new CompilingSimpleInstructionVisitor(module, setter, globalType.valType().stackSlots, classGenCallbacks);
+            setter.visitCode();
+            setter.visitVarInsn(globalType.valType().loadOpcode, 0);
+            global.emitSet(module, setter, setterCompilingVisitor);
+            setter.visitInsn(Opcodes.RETURN);
+            setter.visitMaxs(0, 0);
+            setter.visitEnd();
+        }
+    }
+
 
 }

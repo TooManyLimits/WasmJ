@@ -26,6 +26,8 @@ public interface SimpleTable {
     void setTable(SimpleModule callingModule, MethodVisitor visitor);
     void emitTable(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks);
 
+    String exportedAs();
+
     /**
      * A table defined in the same file
      */
@@ -67,23 +69,7 @@ public interface SimpleTable {
             setTable(declaringModule, initFunction);
 
             // Emit export
-            if (exportedAs != null) {
-                // Export getter and setter methods
-                MethodVisitor getter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportTableGetterName(exportedAs), "()" + descriptor, null, null);
-                getter.visitCode();
-                getter.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), name, descriptor);
-                getter.visitInsn(Opcodes.ARETURN);
-                getter.visitMaxs(0, 0);
-                getter.visitEnd();
-
-                MethodVisitor setter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportTableSetterName(exportedAs), "(" + descriptor + ")V", null, null);
-                setter.visitCode();
-                setter.visitVarInsn(Opcodes.ALOAD, 0);
-                setter.visitFieldInsn(Opcodes.PUTSTATIC, Names.className(declaringModule.moduleName), name, descriptor);
-                setter.visitInsn(Opcodes.RETURN);
-                setter.visitMaxs(0, 0);
-                setter.visitEnd();
-            }
+            SimpleTable.export(this, declaringModule, classWriter);
         }
     }
 
@@ -108,9 +94,32 @@ public interface SimpleTable {
 
         @Override
         public void emitTable(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
-            if (exportedAs != null) {
-                throw new IllegalStateException("Re-exporting imported members is TODO");
-            }
+            // Just export if necessary
+            SimpleTable.export(this, declaringModule, classWriter);
+        }
+    }
+
+    // Export the table if necessary
+    private static void export(SimpleTable tableToExport, SimpleModule module, ClassVisitor classWriter) {
+        String exportedAs = tableToExport.exportedAs();
+        if (exportedAs != null) {
+            String descriptor = Type.getDescriptor(RefCountable[].class);
+
+            // Export getter and setter methods
+            MethodVisitor getter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportTableGetterName(exportedAs), "()" + descriptor, null, null);
+            getter.visitCode();
+            tableToExport.getTable(module, getter);
+            getter.visitInsn(Opcodes.ARETURN);
+            getter.visitMaxs(0, 0);
+            getter.visitEnd();
+
+            MethodVisitor setter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportTableSetterName(exportedAs), "(" + descriptor + ")V", null, null);
+            setter.visitCode();
+            setter.visitVarInsn(Opcodes.ALOAD, 0);
+            tableToExport.setTable(module, getter);
+            setter.visitInsn(Opcodes.RETURN);
+            setter.visitMaxs(0, 0);
+            setter.visitEnd();
         }
     }
 

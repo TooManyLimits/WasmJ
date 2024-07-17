@@ -62,7 +62,7 @@ public interface SimpleMemory {
 
             // Emit export
             if (exportedAs != null) {
-//                throw new IllegalStateException("Memory exports not yet implemented");
+                throw new UnsupportedOperationException("Memory exports not yet implemented");
             }
         }
     }

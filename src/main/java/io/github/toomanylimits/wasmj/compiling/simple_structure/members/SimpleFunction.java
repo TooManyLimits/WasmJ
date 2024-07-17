@@ -150,7 +150,7 @@ public interface SimpleFunction {
         public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Do nothing, the function was emitted in another module, unless we need to re-export it
             if (exportedAs != null) {
-                throw new IllegalStateException("Re-exporting imported members is TODO");
+                throw new UnsupportedOperationException("Re-exporting imported functions is TODO");
             }
         }
 
