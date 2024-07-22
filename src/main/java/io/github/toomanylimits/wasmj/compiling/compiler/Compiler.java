@@ -48,7 +48,7 @@ public class Compiler {
     public static Map<String, byte[]> compile(SimpleModule module) {
         // Create and begin the class writer
         ClassVisitor classWriter = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
-//        classWriter = new CheckClassAdapter(classWriter);
+        classWriter = new CheckClassAdapter(classWriter);
 
         String className = Names.className(module.moduleName);
         classWriter.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, className, null, Type.getInternalName(Object.class), null);
@@ -75,13 +75,18 @@ public class Compiler {
         initFunction.visitEnd();
 
         // Process the callbacks
-        HashSet<ClassGenCallback> newCallbacks = new HashSet<>(classGenCallbacks);
-        while (!newCallbacks.isEmpty()) {
-            for (var callback : newCallbacks) {
-                newCallbacks.addAll(callback.accept(module, classWriter));
+        ArrayList<ClassGenCallback> allCallbacks = new ArrayList<>(classGenCallbacks);
+        HashSet<ClassGenCallback> alreadyRan = new HashSet<>();
+        for (int i = 0; i < allCallbacks.size(); i++) {
+            ClassGenCallback callback = allCallbacks.get(i);
+            if (callback == null) continue;
+            Set<ClassGenCallback> newCallbacks = callback.accept(module, classWriter);
+            alreadyRan.add(callback);
+            if (newCallbacks == null) continue;
+            for (ClassGenCallback newCallback : newCallbacks) {
+                if (alreadyRan.contains(newCallback)) continue;
+                allCallbacks.add(newCallback);
             }
-            newCallbacks.removeAll(classGenCallbacks);
-            classGenCallbacks.addAll(newCallbacks);
         }
 
         // End the writer and return it as a byte array

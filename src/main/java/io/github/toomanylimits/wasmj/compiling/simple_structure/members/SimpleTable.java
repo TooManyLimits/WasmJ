@@ -116,7 +116,7 @@ public interface SimpleTable {
             MethodVisitor setter = classWriter.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, Names.exportTableSetterName(exportedAs), "(" + descriptor + ")V", null, null);
             setter.visitCode();
             setter.visitVarInsn(Opcodes.ALOAD, 0);
-            tableToExport.setTable(module, getter);
+            tableToExport.setTable(module, setter);
             setter.visitInsn(Opcodes.RETURN);
             setter.visitMaxs(0, 0);
             setter.visitEnd();

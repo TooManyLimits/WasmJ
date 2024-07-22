@@ -47,6 +47,8 @@ public class WasmInstance {
         // Compile the module and add it to the custom classloader
         SimpleModule simple = new SimpleModule(moduleName, module, this);
         Map<String, byte[]> compiled = Compiler.compile(simple);
+        for (byte[] compiledClass : compiled.values())
+            limiter.incHeapMemoryUsed(compiledClass.length);
         loader.classes.putAll(compiled);
         // Get the wasm class and call the init method.
         try {

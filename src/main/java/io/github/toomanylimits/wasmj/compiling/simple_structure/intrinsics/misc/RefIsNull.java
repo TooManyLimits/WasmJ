@@ -18,21 +18,26 @@ public class RefIsNull implements SimpleInstruction.Intrinsic {
     @Override
     public void atCallSite(SimpleModule module, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor) {
         // If we count memory, need something more advanced
+        // [object]
         if (module.instance.limiter.countsMemory) {
             Label isNull = new Label();
             Label end = new Label();
-            visitor.visitJumpInsn(Opcodes.IFNULL, isNull); // Jump if it's null
-            compilingVisitor.visitIntrinsic(DecRefCount.INSTANCE); // Not null, decrement the refcount
-            visitor.visitInsn(Opcodes.ICONST_0); // Not null, push 0
+            visitor.visitInsn(Opcodes.DUP); // [object, object]
+            visitor.visitJumpInsn(Opcodes.IFNULL, isNull); // [object], Jump if it's null
+            compilingVisitor.visitIntrinsic(DecRefCount.INSTANCE); // [], Not null, decrement the refcount
+            visitor.visitInsn(Opcodes.ICONST_0); // [0] Not null, push 0
             visitor.visitJumpInsn(Opcodes.GOTO, end);
 
-            visitor.visitLabel(isNull);
-            visitor.visitInsn(Opcodes.ICONST_1); // It's null, push 1
+            visitor.visitLabel(isNull); // [object]
+            visitor.visitInsn(Opcodes.POP); // []
+            visitor.visitInsn(Opcodes.ICONST_1); // [1] It's null, push 1
 
             visitor.visitLabel(end);
+            // [0 or 1]
         } else {
             // Otherwise, just a simple BytecodeHelper.test().
             BytecodeHelper.test(visitor, Opcodes.IFNULL);
+            // [0 or 1]
         }
     }
 
