@@ -1,20 +1,26 @@
 package io.github.toomanylimits.wasmj.runtime.reflect;
 
+import io.github.toomanylimits.wasmj.compiling.compiler.CompilingSimpleInstructionVisitor;
 import io.github.toomanylimits.wasmj.compiling.helpers.Names;
 import io.github.toomanylimits.wasmj.compiling.helpers.BytecodeHelper;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.SimpleModule;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.ClassGenCallback;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.misc.RefFunc;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox.DecRefCount;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.sandbox.IncRefCount;
+import io.github.toomanylimits.wasmj.compiling.simple_structure.intrinsics.table.TableGet;
 import io.github.toomanylimits.wasmj.parsing.types.ValType;
 import io.github.toomanylimits.wasmj.runtime.reflect.annotations.*;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
+import io.github.toomanylimits.wasmj.runtime.types.FuncRefInstance;
+import io.github.toomanylimits.wasmj.runtime.types.WasmCallback;
 import io.github.toomanylimits.wasmj.util.ListUtils;
 import org.objectweb.asm.*;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Information about a JavaModule that was reflected.
@@ -75,6 +81,9 @@ public class JavaModuleData<T> {
         allowedMethods = ListUtils.associateBy(ListUtils.map(ListUtils.filter(Arrays.asList(moduleClass.getMethods()),
                 method -> method.isAnnotationPresent(WasmJAllow.class)),
                 method -> {
+                    // Check validity:
+                    if (method.getReturnType() == WasmCallback.class)
+                        throw new IllegalArgumentException("Invalid method \"" + method.getName() + "\" - cannot return a WasmCallback from a method! Only Java may hold them!");
                     // Get value
                     WasmJRename rename = method.getAnnotation(WasmJRename.class);
                     String wasmName = rename != null ? rename.value() : method.getName();
@@ -108,8 +117,7 @@ public class JavaModuleData<T> {
             return method.isAnnotationPresent(LimiterAccess.class);
         }
 
-        // A function needs glue if it has any reference-type parameters which are more specific than
-        // RefCountable.
+        // A function needs glue if it has any reference-type parameters.
         // TODO: Take return type into consideration...?
         public boolean needsGlue() {
             if (!isStatic() && globalInstanceMode) return true;
@@ -122,16 +130,24 @@ public class JavaModuleData<T> {
             return "(" + ListUtils.fold(ListUtils.map(getGlueParams(), MethodData::gluedTypeDescriptor), "", String::concat) + ")" + Type.getDescriptor(method.getReturnType());
         }
 
-        public void writeGlue(ClassVisitor writer, String functionName, String callerModuleName, String javaModuleName, boolean doRefcounting) {
+        public void writeGlue(SimpleModule declaringModule, ClassVisitor writer, String functionName, String javaModuleName, Set<ClassGenCallback> classGenCallbacks) {
             int access = Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC;
             MethodVisitor visitor = writer.visitMethod(access, functionName, glueDescriptor(), null, null);
 
             visitor.visitCode();
             if (globalInstanceMode && !isStatic()) {
-                String owner = Names.className(callerModuleName); // Field is located in the caller, the wasm module
+                String owner = Names.className(declaringModule.moduleName); // Field is located in the caller, the wasm module
                 String name = Names.globalInstanceFieldName(javaModuleName); // Name is based on the name of the java module
                 String desc = Type.getDescriptor(method.getDeclaringClass()); // Receiver is the type of the global instance
                 visitor.visitFieldInsn(Opcodes.GETSTATIC, owner, name, desc); // Grab the static global instance
+            }
+
+            // Count the total number of local slots
+            int numLocals = 0;
+            for (Class<?> glueParam : getGlueParams()) {
+                if (glueParam == boolean.class) numLocals += 1;
+                else if (glueParam == WasmCallback.class) numLocals += 2;
+                else numLocals += BytecodeHelper.wasmType(glueParam).stackSlots;
             }
 
             int paramIndex = 0;
@@ -143,15 +159,41 @@ public class JavaModuleData<T> {
                     visitor.visitVarInsn(Opcodes.ILOAD, localIndex);
                     BytecodeHelper.test(visitor, Opcodes.IFNE); // Convert to 1 or 0
                     localIndex += 1;
-                } else {
+                } else if (glueParam != WasmCallback.class) {
                     ValType valtype = BytecodeHelper.wasmType(glueParam);
                     visitor.visitVarInsn(valtype.loadOpcode, localIndex); // Load the local
                     localIndex += valtype.stackSlots;
+                } else {
+                    // WasmCallback is special in that it comes in as 2 i32s, and it becomes an instance of WasmCallback
+                    // before going to the java method.
+                    CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, visitor, numLocals, classGenCallbacks);
+                    visitor.visitTypeInsn(Opcodes.NEW, Type.getInternalName(WasmCallback.class)); // [uninit callback]
+                    visitor.visitInsn(Opcodes.DUP); // [uninit callback, uninit callback]
+                    visitor.visitVarInsn(Opcodes.ILOAD, localIndex); // [uninit callback, uninit callback, function index]
+                    int funcrefTableIndex = declaringModule.getFuncrefTableIndex();
+                    if (funcrefTableIndex == -1) {
+                        BytecodeHelper.throwRuntimeError(visitor, "Error calling method \"" + wasmName + "\" - it expects a callback, but you did not export a table under the name \"" + Names.SPECIAL_FUNCREF_TABLE_EXPORT_KEY + "\"!");
+                    } else {
+                        compilingVisitor.visitIntrinsic(new TableGet(funcrefTableIndex)); // [uninit callback, uninit callback, FuncRefInstance]
+                        visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class)); // Ensure it's really a FuncRefInstance
+                        visitor.visitVarInsn(Opcodes.ILOAD, localIndex + 1); // [uninit callback, uninit callback, FuncRefInstance, void pointer]
+                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [uninit callback, uninit callback, FuncRefInstance, void pointer, limiter]
+                        visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(WasmCallback.class), "<init>", "(" + Type.getDescriptor(FuncRefInstance.class) + "I" + Type.getDescriptor(InstanceLimiter.class) + ")V", false); // [init callback]
+                        if (declaringModule.instance.limiter.countsMemory) {
+                            visitor.visitInsn(Opcodes.DUP);
+                            compilingVisitor.visitIntrinsic(IncRefCount.INSTANCE);
+                        }
+                    }
+                    localIndex += 2;
                 }
+
                 if (isGluedType(glueParam)) {
+
+                    Label isNull = new Label();
+
                     // If it's glued, use instanceof to ensure type
                     Label isInstance = new Label();
-                    Label isNull = new Label();
+
                     // Stack = [ ...,  object ]
                     visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
                     visitor.visitTypeInsn(Opcodes.INSTANCEOF, Type.getInternalName(glueParam)); // [ ..., object, bool ]
@@ -161,7 +203,7 @@ public class JavaModuleData<T> {
                     visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
                     visitor.visitJumpInsn(Opcodes.IFNULL, isNull); // [ ..., object ]
 
-                    // Throw an error with a hopefully nice error message
+                    // Throw an error with a hopefully nice error message (TODO: Make configurable for increased performance / smaller binary?)
                     visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
                     visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Class", "getSimpleName", "()Ljava/lang/String;", false);
                     visitor.visitLdcInsn("Method \"" + wasmName + "\" expected type " + glueParam.getSimpleName() + " as param " + paramIndex + ", found ");
@@ -173,11 +215,10 @@ public class JavaModuleData<T> {
 
                     // Do refcounting on the type if necessary, since we're calling out of WASM and into java!
                     // Here, the type *is* an instance, and it *is not* null.
-                    if (doRefcounting) {
-                        visitor.visitInsn(Opcodes.DUP); // [ ..., object, object ]
-                        visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(RefCountable.class)); // [ ..., object, object ]
-                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(callerModuleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [ ..., object, object, limiter ]
-                        visitor.visitMethodInsn(Opcodes.INVOKEVIRTUAL, Type.getInternalName(RefCountable.class), "dec", "(" + Type.getDescriptor(InstanceLimiter.class) + ")V", false); // [ ..., object ]
+                    if (declaringModule.instance.limiter.countsMemory) {
+                        CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, visitor, numLocals, classGenCallbacks);
+                        visitor.visitInsn(Opcodes.DUP);
+                        compilingVisitor.visitIntrinsic(DecRefCount.INSTANCE);
                     }
 
                     visitor.visitLabel(isNull);
@@ -216,14 +257,15 @@ public class JavaModuleData<T> {
             return res;
         }
 
-        // Returns true if the clazz is RefCountable or a subclass
+        // Returns true if the clazz is a subclass of RefCountable
         private static boolean isGluedType(Class<?> clazz) {
             return RefCountable.class.isAssignableFrom(clazz);
-//            return !clazz.isPrimitive() && !clazz.isAssignableFrom(RefCountable.class);
         }
 
         private static String gluedTypeDescriptor(Class<?> clazz) {
-            return isGluedType(clazz) ? Type.getDescriptor(Object.class) : Type.getDescriptor(clazz);
+            if (clazz == WasmCallback.class) return "II"; // The WasmCallback special
+            if (isGluedType(clazz)) return Type.getDescriptor(RefCountable.class);
+            return Type.getDescriptor(clazz);
         }
 
 

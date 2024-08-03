@@ -205,7 +205,7 @@ public interface SimpleFunction {
         public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Only thing to do is emit glue if necessary.
             if (methodData.needsGlue()) {
-                methodData.writeGlue(classWriter, Names.glueFuncName(funcImportIndex), declaringModule.moduleName, javaModuleName, declaringModule.instance.limiter.countsMemory);
+                methodData.writeGlue(declaringModule, classWriter, Names.glueFuncName(funcImportIndex), javaModuleName, classGenCallbacks);
             }
         }
 

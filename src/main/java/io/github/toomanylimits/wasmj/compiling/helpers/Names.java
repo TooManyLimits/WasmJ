@@ -11,10 +11,14 @@ public class Names {
     public static String limiterFieldName() { return "limiter"; }
     public static String exportedFunctionsFieldName() { return "exportedFunctions"; }
 
-    // The special externref table key, used for @ExternrefTableAccess, and the table allocator function name
-    public static final String SPECIAL_EXTERNREF_TABLE_EXPORT_KEY = "wasmj-externref";
+    // The special table key used for @ExternrefTableAccess, and the table allocator function name
+    public static final String SPECIAL_EXTERNREF_TABLE_EXPORT_KEY = "__externref_table";
     public static String externrefTableAccessorImplClassName(String moduleName) { return "accessor_impls/" + moduleName; }
     public static String externrefTableAccessorFieldName() { return "externrefTableAccessor"; }
+
+    // The special table key used for
+    public static final String SPECIAL_FUNCREF_TABLE_EXPORT_KEY = "__indirect_function_table"; // This is emitted by rust when using the "-C link-arg=--export-table" flag!
+    public static String funcrefTableFieldName(String moduleName) { return "funcrefTableAccessor"; }
 
     // Data / elements
     public static String dataFieldName(int declaredIndex) { return "data_" + declaredIndex; }

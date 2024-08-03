@@ -47,6 +47,8 @@ public class SimpleModule {
 
     // Index of the special externref table. -1 if there is no such table.
     private int externrefTableIndex = -1;
+    // Index of the special funcref table. -1 if there is no such table.
+    private int funcrefTableIndex = -1;
 
     /**
      * To create a SimpleModule, we need to give it:
@@ -151,9 +153,11 @@ public class SimpleModule {
             TableType tableType = wasmModule.tables.get(adjustedIndex);
             // Create the table and store it.
             String exportedAs = exportedTables.get(i);
-            // Check if it's the special table:
+            // Check if it's a special table:
             if (Names.SPECIAL_EXTERNREF_TABLE_EXPORT_KEY.equals(exportedAs))
                 this.externrefTableIndex = i;
+            else if (Names.SPECIAL_FUNCREF_TABLE_EXPORT_KEY.equals(exportedAs))
+                this.funcrefTableIndex = i;
             this.tables[i] = new SimpleTable.SameFileTable(adjustedIndex, tableType, exportedAs);
         }
 
@@ -215,6 +219,10 @@ public class SimpleModule {
 
     public int getExternrefTableIndex() {
         return externrefTableIndex;
+    }
+
+    public int getFuncrefTableIndex() {
+        return funcrefTableIndex;
     }
 
 
