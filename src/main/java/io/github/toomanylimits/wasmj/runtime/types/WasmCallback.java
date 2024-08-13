@@ -20,13 +20,17 @@ import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 public class WasmCallback extends RefCountable {
 
     private final FuncRefInstance funcRef;
+    private final FuncRefInstance freer;
     private final int dataPointer;
 
     // To be constructed by bytecode
-    public WasmCallback(FuncRefInstance funcRef, int dataPointer, InstanceLimiter limiter) throws TooMuchHeapMemoryException {
+    public WasmCallback(FuncRefInstance funcRef, FuncRefInstance freer, int dataPointer, InstanceLimiter limiter) throws TooMuchHeapMemoryException {
         this.funcRef = funcRef;
+        this.freer = freer;
         this.dataPointer = dataPointer;
+
         this.funcRef.inc(limiter);
+        this.freer.inc(limiter);
     }
 
     // Invoke the callback with the given args!
@@ -44,9 +48,17 @@ public class WasmCallback extends RefCountable {
     }
 
     @Override
-    protected void drop(InstanceLimiter limiter) {
-        this.funcRef.dec(limiter); // Decrement the funcref ref-counter
-        // TODO: Invoke the freeing function
+    protected void drop(InstanceLimiter limiter) throws WasmException {
+        this.funcRef.dec(limiter); // Decrement the funcrefs' ref counters
+        this.freer.dec(limiter);
+        try {
+            // Invoke the freer with the int pointer
+            this.freer.handle.invokeExact(dataPointer);
+        } catch (WasmException e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new JvmCodeError(t);
+        }
     }
 
     @Override

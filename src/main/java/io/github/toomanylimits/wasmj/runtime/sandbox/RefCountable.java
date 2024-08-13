@@ -1,6 +1,7 @@
 package io.github.toomanylimits.wasmj.runtime.sandbox;
 
 import io.github.toomanylimits.wasmj.runtime.errors.TooMuchHeapMemoryException;
+import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 
 /**
  * Extend this for a type that should be WASM-capable
@@ -19,7 +20,7 @@ public abstract class RefCountable {
             limiter.incHeapMemoryUsed(getSize());
     }
     // Decrease the number of references to this by 1
-    public void dec(InstanceLimiter limiter) {
+    public void dec(InstanceLimiter limiter) throws WasmException {
         references--;
         if (references == 0) {
             limiter.decHeapMemoryUsed(getSize());
@@ -46,7 +47,7 @@ public abstract class RefCountable {
      * then drop() can just be a no-op, and instead the size of the children
      * should be included in the getSize() function.
      */
-    protected abstract void drop(InstanceLimiter limiter);
+    protected abstract void drop(InstanceLimiter limiter) throws WasmException;
 
     /**
      * Return the "size" of this object, so that the ref counter knows

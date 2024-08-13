@@ -61,6 +61,8 @@ public class JavaModuleData<T> {
                 method -> method.isAnnotationPresent(WasmJAllow.class)),
                 method -> {
                     // Get value
+                    if (method.getReturnType() == WasmCallback.class)
+                        throw new IllegalArgumentException("Method \"" + method.getName() + "\" tries to return a WasmCallback! This is not allowed; they may only be held by Java!");
                     if (!Modifier.isStatic(method.getModifiers()) && globalInstance == null)
                         throw new IllegalArgumentException("Method \"" + method.getName() + "\" is non-static, and allowed, but the given instance is null!");
                     WasmJRename rename = method.getAnnotation(WasmJRename.class);
@@ -81,9 +83,6 @@ public class JavaModuleData<T> {
         allowedMethods = ListUtils.associateBy(ListUtils.map(ListUtils.filter(Arrays.asList(moduleClass.getMethods()),
                 method -> method.isAnnotationPresent(WasmJAllow.class)),
                 method -> {
-                    // Check validity:
-                    if (method.getReturnType() == WasmCallback.class)
-                        throw new IllegalArgumentException("Invalid method \"" + method.getName() + "\" - cannot return a WasmCallback from a method! Only Java may hold them!");
                     // Get value
                     WasmJRename rename = method.getAnnotation(WasmJRename.class);
                     String wasmName = rename != null ? rename.value() : method.getName();
@@ -146,7 +145,7 @@ public class JavaModuleData<T> {
             int numLocals = 0;
             for (Class<?> glueParam : getGlueParams()) {
                 if (glueParam == boolean.class) numLocals += 1;
-                else if (glueParam == WasmCallback.class) numLocals += 2;
+                else if (glueParam == WasmCallback.class) numLocals += 3;
                 else numLocals += BytecodeHelper.wasmType(glueParam).stackSlots;
             }
 
@@ -164,27 +163,35 @@ public class JavaModuleData<T> {
                     visitor.visitVarInsn(valtype.loadOpcode, localIndex); // Load the local
                     localIndex += valtype.stackSlots;
                 } else {
-                    // WasmCallback is special in that it comes in as 2 i32s, and it becomes an instance of WasmCallback
+                    // WasmCallback is special in that it comes in as 3 i32s, and it becomes an instance of WasmCallback
                     // before going to the java method.
-                    CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, visitor, numLocals, classGenCallbacks);
-                    visitor.visitTypeInsn(Opcodes.NEW, Type.getInternalName(WasmCallback.class)); // [uninit callback]
-                    visitor.visitInsn(Opcodes.DUP); // [uninit callback, uninit callback]
-                    visitor.visitVarInsn(Opcodes.ILOAD, localIndex); // [uninit callback, uninit callback, function index]
                     int funcrefTableIndex = declaringModule.getFuncrefTableIndex();
                     if (funcrefTableIndex == -1) {
                         BytecodeHelper.throwRuntimeError(visitor, "Error calling method \"" + wasmName + "\" - it expects a callback, but you did not export a table under the name \"" + Names.SPECIAL_FUNCREF_TABLE_EXPORT_KEY + "\"!");
                     } else {
+                        CompilingSimpleInstructionVisitor compilingVisitor = new CompilingSimpleInstructionVisitor(declaringModule, visitor, numLocals, classGenCallbacks);
+                        visitor.visitTypeInsn(Opcodes.NEW, Type.getInternalName(WasmCallback.class)); // [uninit callback]
+                        visitor.visitInsn(Opcodes.DUP); // [uninit callback, uninit callback]
+
+                        visitor.visitVarInsn(Opcodes.ILOAD, localIndex); // [uninit callback, uninit callback, function index]
                         compilingVisitor.visitIntrinsic(new TableGet(funcrefTableIndex)); // [uninit callback, uninit callback, FuncRefInstance]
                         visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class)); // Ensure it's really a FuncRefInstance
-                        visitor.visitVarInsn(Opcodes.ILOAD, localIndex + 1); // [uninit callback, uninit callback, FuncRefInstance, void pointer]
-                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [uninit callback, uninit callback, FuncRefInstance, void pointer, limiter]
-                        visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(WasmCallback.class), "<init>", "(" + Type.getDescriptor(FuncRefInstance.class) + "I" + Type.getDescriptor(InstanceLimiter.class) + ")V", false); // [init callback]
+
+                        visitor.visitVarInsn(Opcodes.ILOAD, localIndex + 1); // [uninit callback, uninit callback, FuncRefInstance, freer index]
+                        compilingVisitor.visitIntrinsic(new TableGet(funcrefTableIndex)); // [uninit callback, uninit callback, FuncRefInstance, FuncRefInstance]
+                        visitor.visitTypeInsn(Opcodes.CHECKCAST, Type.getInternalName(FuncRefInstance.class)); // Ensure it's really a FuncRefInstance
+
+                        visitor.visitVarInsn(Opcodes.ILOAD, localIndex + 2); // [uninit callback, uninit callback, FuncRefInstance, FuncRefInstance, void pointer]
+                        visitor.visitFieldInsn(Opcodes.GETSTATIC, Names.className(declaringModule.moduleName), Names.limiterFieldName(), Type.getDescriptor(InstanceLimiter.class)); // [uninit callback, uninit callback, FuncRefInstance, FuncRefInstance, void pointer, limiter]
+                        visitor.visitMethodInsn(Opcodes.INVOKESPECIAL, Type.getInternalName(WasmCallback.class), "<init>", "(" + Type.getDescriptor(FuncRefInstance.class) + Type.getDescriptor(FuncRefInstance.class) + "I" + Type.getDescriptor(InstanceLimiter.class) + ")V", false); // [init callback]
+
                         if (declaringModule.instance.limiter.countsMemory) {
                             visitor.visitInsn(Opcodes.DUP);
                             compilingVisitor.visitIntrinsic(IncRefCount.INSTANCE);
                         }
                     }
-                    localIndex += 2;
+
+                    localIndex += 3;
                 }
 
                 if (isGluedType(glueParam)) {
@@ -263,7 +270,7 @@ public class JavaModuleData<T> {
         }
 
         private static String gluedTypeDescriptor(Class<?> clazz) {
-            if (clazz == WasmCallback.class) return "II"; // The WasmCallback special
+            if (clazz == WasmCallback.class) return "III"; // The WasmCallback special
             if (isGluedType(clazz)) return Type.getDescriptor(RefCountable.class);
             return Type.getDescriptor(clazz);
         }

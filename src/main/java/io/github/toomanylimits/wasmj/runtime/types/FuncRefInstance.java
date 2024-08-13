@@ -1,7 +1,5 @@
 package io.github.toomanylimits.wasmj.runtime.types;
 
-import io.github.toomanylimits.wasmj.runtime.errors.JvmCodeError;
-import io.github.toomanylimits.wasmj.runtime.errors.WasmException;
 import io.github.toomanylimits.wasmj.runtime.sandbox.InstanceLimiter;
 import io.github.toomanylimits.wasmj.runtime.sandbox.RefCountable;
 
