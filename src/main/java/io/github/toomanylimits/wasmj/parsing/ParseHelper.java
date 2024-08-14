@@ -122,7 +122,7 @@ public class ParseHelper {
 
     public static byte[] readByteArray(InputStream stream) throws IOException, ModuleParseException {
         int length = readUnsignedWasmInt(stream);
-        if (length < 0) throw new ModuleParseException("Byte array too long, max length is ${Int.MAX_VALUE}");
+        if (length < 0) throw new ModuleParseException("Byte array too long, max length is " + Integer.MAX_VALUE);
         return stream.readNBytes(length);
     }
 

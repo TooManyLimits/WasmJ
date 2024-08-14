@@ -11,7 +11,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class WasmModule {
     public final List<StackType> types;
@@ -27,96 +29,89 @@ public class WasmModule {
     public final List<Data> datas;
     public final Integer datacount;
 
+    // Names
+    public List<FuncNameAssociation> debugFuncNames = List.of();
+
+    // Current section during parsing
+    private int section;
+
     public WasmModule(InputStream stream) throws IOException, ModuleParseException {
         stream.skipNBytes(8); //remove magic and version
 
-        var section = stream.read();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        section = stream.read();
+        handleCustomSections(stream);
         if (section == 1) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             types = ParseHelper.readVector(stream, StackType::readFuncType);
             section = stream.read();
         } else types = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 2) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             imports = ParseHelper.readVector(stream, Import::read);
             section = stream.read();
         } else imports = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 3) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             functions = ParseHelper.readVector(stream, ParseHelper::readUnsignedWasmInt);
             section = stream.read();
         } else functions = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 4) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             tables = ParseHelper.readVector(stream, TableType::read);
             section = stream.read();
         } else tables = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 5) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             memories = ParseHelper.readVector(stream, Limits::read);
             section = stream.read();
         } else memories = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 6) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             globals = ParseHelper.readVector(stream, i -> Global.read(i, types, imports));
             section = stream.read();
         } else globals = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 7) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             exports = ParseHelper.readVector(stream, Export::read);
             section = stream.read();
         } else exports = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 8) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             start = ParseHelper.readUnsignedWasmInt(stream);
             section = stream.read();
         } else start = null;
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 9) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             elements = ParseHelper.readVector(stream, i -> Element.read(i, types, imports));
             section = stream.read();
         } else elements = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 12) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             datacount = ParseHelper.readUnsignedWasmInt(stream);
             section = stream.read();
         } else datacount = null;
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 10) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             codes = ParseHelper.readVectorIndexed(stream, (index, s) -> Code.read(index, types, functions, s));
             section = stream.read();
         } else codes = List.of();
-        while (section == 0) { stream.skipNBytes(ParseHelper.readUnsignedWasmInt(stream)); section = stream.read(); }
+        handleCustomSections(stream);
         if (section == 11) {
             int size = ParseHelper.readUnsignedWasmInt(stream);
             datas = ParseHelper.readVector(stream, i -> Data.read(i, types, imports));
             section = stream.read();
         } else datas = List.of();
-        while (section == 0) {
-            int MAX_PRINTED_BYTES = 3000;
-            int len = ParseHelper.readUnsignedWasmInt(stream);
-            if (len < MAX_PRINTED_BYTES) {
-                byte[] contents = stream.readNBytes(len);
-                ByteArrayInputStream data = new ByteArrayInputStream(contents);
-                String name = ParseHelper.readString(data);
-                byte[] bytes = data.readAllBytes();
-                System.out.println("Custom section \"" + name + "\" = " + Arrays.toString(bytes));
-            } else {
-                stream.skipNBytes(len);
-            }
-            section = stream.read();
-        }
+        handleCustomSections(stream);
     }
 
     // Helpers!
@@ -170,6 +165,50 @@ public class WasmModule {
             return tables.get(adjustedIndex);
         }
     }
+
+    private void handleCustomSections(InputStream stream) throws IOException, ModuleParseException {
+        while (section == 0) {
+            int len = ParseHelper.readUnsignedWasmInt(stream); // Read length
+            ByteArrayInputStream customData = new ByteArrayInputStream(stream.readNBytes(len)); // Read that many bytes and put aside
+            String name = ParseHelper.readString(customData);
+            CustomSectionHandler handler = CUSTOM_SECTION_HANDLERS.get(name);
+            // If we have a handler, use it.
+            if (handler != null)
+                handler.handle(this, customData);
+            section = stream.read();
+        }
+    }
+
+    @FunctionalInterface
+    public interface CustomSectionHandler {
+        void handle(WasmModule inProgressModule, InputStream stream) throws IOException, ModuleParseException;
+    }
+
+    public static final Map<String, CustomSectionHandler> CUSTOM_SECTION_HANDLERS = new HashMap<>() {{
+        // Name handler. This deals with debug symbols.
+        // https://webassembly.github.io/spec/core/appendix/custom.html
+        put("name", (inProgressModule, stream) -> {
+            int subsection = stream.read();
+            if (subsection == 0) {
+                // Module name
+                int len = ParseHelper.readUnsignedWasmInt(stream);
+                stream.skipNBytes(len); // Ignore for now
+                subsection = stream.read();
+            }
+            if (subsection == 1) {
+                // Function names
+                int len = ParseHelper.readUnsignedWasmInt(stream);
+                inProgressModule.debugFuncNames = ParseHelper.readVector(stream, FuncNameAssociation::read);
+                subsection = stream.read();
+            }
+            if (subsection == 2) {
+                // Local variable names
+                int len = ParseHelper.readUnsignedWasmInt(stream);
+                stream.skipNBytes(len); // Ignore for now
+            }
+        });
+    }};
+
 
 }
 

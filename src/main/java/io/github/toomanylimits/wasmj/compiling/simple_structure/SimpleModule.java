@@ -26,6 +26,7 @@ import javax.swing.plaf.ListUI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * A module, after having been converted to the simplified format.
@@ -85,6 +86,8 @@ public class SimpleModule {
             }
         }
         for (int i = wasmModule.funcImports().size(); i < functions.length; i++) {
+            // Get the function debug name, if any
+            String debugName = FuncNameAssociation.find(wasmModule.debugFuncNames, i);
             // Get adjusted defaultIndex and type
             int adjustedIndex = i - wasmModule.funcImports().size();
             StackType funcType = wasmModule.types.get(wasmModule.functions.get(adjustedIndex));
@@ -110,7 +113,7 @@ public class SimpleModule {
             funcBody.add(converter.visitReturn(Instruction.Return.INSTANCE)); // Return at the end!
             // Create the function and store it in the array
             String exportedAs = exportedFuncs.get(i);
-            this.functions[i] = new SimpleFunction.SameFileFunction(adjustedIndex, funcType, exportedAs, funcBody, converter.nextLocalSlot);
+            this.functions[i] = new SimpleFunction.SameFileFunction(adjustedIndex, debugName, funcType, exportedAs, funcBody, converter.nextLocalSlot);
         }
 
         // Globals

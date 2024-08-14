@@ -25,7 +25,10 @@ public class Names {
     public static String elemFieldName(int declaredIndex) { return "elem_" + declaredIndex; }
 
     // Functions
-    public static String funcName(int declaredIndex) { return "func_" + declaredIndex; }
+    public static String funcName(int declaredIndex, String sanitizedDebugName) {
+        if (sanitizedDebugName == null) return "func_" + declaredIndex;
+        return "func_" + declaredIndex + "_|debug|_" + sanitizedDebugName;
+    }
     public static String glueFuncName(int funcImportIndex) { return "glue_func_" + funcImportIndex; }
     public static String globalInstanceFieldName(String javaModuleName) { return "global_instance_for_" + javaModuleName; }
     public static String exportFuncName(String memberName) { return "export_func_" + memberName; }

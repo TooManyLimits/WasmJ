@@ -50,14 +50,14 @@ public interface SimpleFunction {
     /**
      * A WASM function which is defined in the current module.
      */
-    record SameFileFunction(int declaredIndex, StackType funcType, String/*?*/ exportedAs, List<SimpleInstruction> instructions, int nextLocalSlot) implements SimpleFunction {
+    record SameFileFunction(int declaredIndex, String debugName, StackType funcType, String/*?*/ exportedAs, List<SimpleInstruction> instructions, int nextLocalSlot) implements SimpleFunction {
         @Override
         public void emitCall(SimpleModule callingModule, MethodVisitor visitor, CompilingSimpleInstructionVisitor compilingVisitor) {
             // No need for ref-count tracking here.
             // When a WASM function calls another WASM function, references don't
             // "disappear", they are instead taken over by the new stack frame.
             String className = Names.className(callingModule.moduleName);
-            String methodName = Names.funcName(declaredIndex);
+            String methodName = Names.funcName(declaredIndex, debugName);
             String descriptor = funcType.descriptor();
             // BytecodeHelper.debugPrintln(visitor, "Calling " + methodName);
             visitor.visitMethodInsn(Opcodes.INVOKESTATIC, className, methodName, descriptor, false);
@@ -68,7 +68,7 @@ public interface SimpleFunction {
         @Override
         public void emitFunction(SimpleModule declaringModule, ClassVisitor classWriter, MethodVisitor initFunction, Set<ClassGenCallback> classGenCallbacks) {
             // Create the method visitor
-            String funcName = Names.funcName(declaredIndex);
+            String funcName = Names.funcName(declaredIndex, debugName);
             String descriptor = funcType.descriptor();
 
             MethodVisitor methodVisitor = classWriter.visitMethod(Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC, funcName, descriptor, null, null);
@@ -127,7 +127,7 @@ public interface SimpleFunction {
 
         @Override
         public Handle getHandle(SimpleModule referringModule) {
-            return new Handle(Opcodes.H_INVOKESTATIC, Names.className(referringModule.moduleName), Names.funcName(declaredIndex), funcType.descriptor(), false);
+            return new Handle(Opcodes.H_INVOKESTATIC, Names.className(referringModule.moduleName), Names.funcName(declaredIndex, debugName), funcType.descriptor(), false);
         }
     }
 

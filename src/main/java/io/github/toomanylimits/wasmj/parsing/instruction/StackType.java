@@ -68,9 +68,9 @@ public record StackType(List<ValType> inTypes, List<ValType> outTypes) {
                 if ((b & 0x40L) != 0L)
                     result = result | ((~0L) << shift);
                 if (result < 0L)
-                    throw new ModuleParseException("Blocktype defaultIndex cannot be negative! Got $result");
+                    throw new ModuleParseException("Blocktype defaultIndex cannot be negative! Got " + result);
                 if (result > (long) Integer.MAX_VALUE)
-                    throw new ModuleParseException("Blocktype defaultIndex too large (must be at most ${Int.MAX_VALUE}, got $result)");
+                    throw new ModuleParseException("Blocktype defaultIndex too large (must be at most " + Integer.MAX_VALUE + ", got " + result + ")");
                 yield moduleTypes.get((int) result);
             }
         };
